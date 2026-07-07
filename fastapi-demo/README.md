@@ -10,7 +10,9 @@ python -m pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-访问 
+访问 http://127.0.0.1:8000/
+![1](./images/image1.png)
+![2](./images/image2.png)
 
 ## 项目结构
 ```

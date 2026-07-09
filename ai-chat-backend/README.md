@@ -1,4 +1,5 @@
 ## 启动
+
 ```
 # 创建虚拟环境
 python -m venv .venv
@@ -15,6 +16,7 @@ uvicorn main:app --reload
 ![2](./images/image2.png)
 
 ## 项目结构
+
 ```
 backend/
 │
@@ -36,6 +38,7 @@ backend/
 ```
 
 main.py 只负责三件事：
+
 - 创建 FastAPI 应用
 - 注册路由
 - 做应用初始化（日志、配置、中间件等）
@@ -62,6 +65,7 @@ AIClient(OpenAI SDK)
       ▼
 OpenAI API
 ```
+
 ```
 OpenAI API
       │
@@ -77,3 +81,38 @@ Route
       ▼
 浏览器
 ```
+
+## 核心思路
+
+- `system prompt` 放在 prompts/system.md，不要写死在代码里。
+- `多轮对话` 不应该由前端每次传一大堆历史，而是先由后端根据 conversation_id 管理。
+- `聊天记录保存` 先用 JSON 文件实现，后面再替换成 SQLite / PostgreSQL。
+
+## 调用 DeepSeek API
+
+DeepSeek API 使用与 OpenAI/Anthropic 兼容的 API 格式，通过修改配置，可以使用 OpenAI/Anthropic SDK 来访问 DeepSeek API
+
+```python
+# Please install OpenAI SDK first: `pip3 install openai`
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.environ.get('DEEPSEEK_API_KEY'),
+    base_url="https://api.deepseek.com")
+
+response = client.chat.completions.create(
+    model="deepseek-v4-pro",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "user", "content": "Hello"},
+    ],
+    stream=False,
+    reasoning_effort="high",
+    extra_body={"thinking": {"type": "enabled"}}
+)
+
+print(response.choices[0].message.content)
+```
+
+https://api-docs.deepseek.com/zh-cn/

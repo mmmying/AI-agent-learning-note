@@ -9,15 +9,9 @@ router = APIRouter(
 )
 
 
-@router.get("/")
-def root() -> dict[str, str]:
-    return {"message": "this is a chat route"}
+chat_service = ChatService()
 
 
-@router.post("/chat")
+@router.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
-    # 路由层只负责收请求、调服务、返回响应
-    service = ChatService()
-    reply = service.chat(request.message)
-
-    return ChatResponse(reply=reply)
+    return chat_service.chat(request)

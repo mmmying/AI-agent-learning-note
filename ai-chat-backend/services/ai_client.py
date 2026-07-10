@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Generator, Literal
 
 from openai import OpenAI
 
@@ -61,11 +61,17 @@ class AIClient:
             },
         }
         if thinking_enabled:
-            kwargs["reasoning_effort"] = DEEPSEEK_REASONING_EFFORT
+            # 思考强度通过 extra_body 传给 DeepSeek，避免污染标准参数
+            kwargs["extra_body"]["reasoning"] = {"effort": DEEPSEEK_REASONING_EFFORT}
         return kwargs
 
-    def chat(self, system_prompt: str, messages: list[Message]) -> str:
-        input_messages = [
+    def _build_input_messages(
+        self,
+        system_prompt: str,
+        messages: list[Message],
+    ) -> list[dict[str, str]]:
+        # 构建带系统提示词的完整消息列表
+        return [
             {
                 "role": "system",
                 "content": system_prompt,
@@ -79,14 +85,15 @@ class AIClient:
             ],
         ]
 
+    def chat(self, system_prompt: str, messages: list[Message]) -> str:
+        input_messages = self._build_input_messages(system_prompt, messages)
+
         if self.provider == "deepseek":
+            # DeepSeek 只兼容 OpenAI 的 Chat Completions API（POST /chat/completions）
             response = self.client.chat.completions.create(
                 **self._build_deepseek_request_kwargs(input_messages),
             )
-            content = response.choices[0].message.content
-            if not content:
-                raise ValueError("DeepSeek API 返回空内容")
-            return content
+            return response.choices[0].message.content or ""
 
         elif self.provider == "openai":
             response = self.client.responses.create(
@@ -94,6 +101,40 @@ class AIClient:
                 input=input_messages,
             )
             return response.output_text
+
+        else:
+            raise ValueError(f"不支持的 API: {self.provider}")
+
+    def chat_stream(
+        self,
+        system_prompt: str,
+        messages: list[Message],
+    ) -> Generator[str, None, None]:
+        # 流式对话，逐段产出模型回复的文本增量
+        input_messages = self._build_input_messages(system_prompt, messages)
+
+        if self.provider == "deepseek":
+            stream = self.client.chat.completions.create(
+                **self._build_deepseek_request_kwargs(input_messages),
+                stream=True,
+            )
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                # 思考模式下会先产出 reasoning_content 字段，这里只输出正文增量
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    yield delta
+
+        elif self.provider == "openai":
+            stream = self.client.responses.create(
+                model=self.model,
+                input=input_messages,
+                stream=True,
+            )
+            for event in stream:
+                if event.type == "response.output_text.delta":
+                    yield event.delta
 
         else:
             raise ValueError(f"不支持的 API: {self.provider}")

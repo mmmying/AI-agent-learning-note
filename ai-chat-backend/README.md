@@ -87,6 +87,7 @@ Route
 - `system prompt` 放在 prompts/system.md，不要写死在代码里。
 - `多轮对话` 不应该由前端每次传一大堆历史，而是先由后端根据 conversation_id 管理。
 - `聊天记录保存` 先用 JSON 文件实现，后面再替换成 SQLite / PostgreSQL。
+- `流式输出` 先在后端用 FastAPI 的 StreamingResponse，前端再用 fetch 读取 stream
 
 ## 调用 DeepSeek API
 

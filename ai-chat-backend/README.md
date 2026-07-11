@@ -88,6 +88,7 @@ Route
 - `多轮对话` 不应该由前端每次传一大堆历史，而是先由后端根据 conversation_id 管理。
 - `聊天记录保存` 先用 JSON 文件实现，后面再替换成 SQLite / PostgreSQL。
 - `流式输出` 先在后端用 FastAPI 的 StreamingResponse，前端再用 fetch 读取 stream
+- `React 前端` 只负责输入、展示、调用 /chat 或 /chat/stream，不要放 AI 逻辑。
 
 ## 调用 DeepSeek API
 
@@ -117,3 +118,7 @@ print(response.choices[0].message.content)
 ```
 
 https://api-docs.deepseek.com/zh-cn/
+
+## 流式输出
+
+流式输出的核心思想：生成器不断 yield 新的数据，StreamingResponse 每得到一个值就立即发送给客户端

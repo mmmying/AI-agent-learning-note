@@ -1,0 +1,176 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f6f7f9;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: #111827;
+}
+
+button {
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.app {
+  width: min(960px, 100%);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.header p {
+  margin: 6px 0 0;
+  color: #6b7280;
+}
+
+.secondary-button {
+  background: #e5e7eb;
+  color: #111827;
+  padding: 10px 14px;
+}
+
+.chat-panel {
+  flex: 1;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 20px;
+  overflow-y: auto;
+  min-height: 520px;
+}
+
+.empty-state {
+  height: 100%;
+  min-height: 460px;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  color: #6b7280;
+}
+
+.empty-state h2 {
+  margin: 0 0 8px;
+  color: #111827;
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.message-row {
+  display: flex;
+}
+
+.user-row {
+  justify-content: flex-end;
+}
+
+.assistant-row {
+  justify-content: flex-start;
+}
+
+.message-bubble {
+  max-width: 78%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.user-row .message-bubble {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.assistant-row .message-bubble {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.message-role {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.message-content {
+  font-size: 15px;
+}
+
+.conversation-id {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.error {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.input-panel {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.input-panel textarea {
+  flex: 1;
+  min-height: 52px;
+  max-height: 160px;
+  resize: vertical;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+}
+
+.actions button {
+  background: #111827;
+  color: #ffffff;
+  padding: 12px 18px;
+}

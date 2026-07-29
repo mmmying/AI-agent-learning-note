@@ -6,8 +6,12 @@ from api.chat import router as chat_router
 from api.conversations import router as conversations_router
 from api.index import router as index_router
 from core.logger import setup_logging
+from core.migrations import run_migrations
 
 setup_logging()
+
+# 启动时执行数据库迁移，保证表结构是最新的
+run_migrations()
 
 # 创建整个应用
 app = FastAPI()

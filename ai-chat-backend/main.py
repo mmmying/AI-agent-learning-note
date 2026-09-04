@@ -5,6 +5,7 @@ from openai import APIError, AuthenticationError, RateLimitError
 from api.chat import router as chat_router
 from api.conversations import router as conversations_router
 from api.index import router as index_router
+from core.config import settings
 from core.logger import setup_logging
 from core.migrations import run_migrations
 
@@ -14,7 +15,7 @@ setup_logging()
 run_migrations()
 
 # 创建整个应用
-app = FastAPI()
+app = FastAPI(title=settings.app_name)
 
 
 @app.exception_handler(RateLimitError)

@@ -71,6 +71,41 @@ export default function App() {
   );
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  /** 聊天消息的滚动容器 */
+  const chatPanelRef = useRef<HTMLElement | null>(null);
+  /**
+   * 是否“钉”在底部:为 true 时新消息到达会自动滚到底部;
+   * 用户主动往上滚动查看历史时置为 false,避免流式输出打断阅读。
+   */
+  const isPinnedToBottomRef = useRef(true);
+
+  /** 滚动到消息列表底部 */
+  const scrollToBottom = useCallback(() => {
+    const panel = chatPanelRef.current;
+    if (panel) {
+      panel.scrollTop = panel.scrollHeight;
+    }
+  }, []);
+
+  // 消息内容变化(新消息、流式增量)时,如果用户在底部附近就自动跟随滚动
+  useEffect(() => {
+    if (isPinnedToBottomRef.current) {
+      scrollToBottom();
+    }
+  }, [messages, scrollToBottom]);
+
+  /** 监听滚动,根据用户当前位置更新“是否钉在底部”的状态 */
+  function handleChatScroll() {
+    const panel = chatPanelRef.current;
+    if (!panel) {
+      return;
+    }
+
+    const distanceToBottom =
+      panel.scrollHeight - panel.scrollTop - panel.clientHeight;
+    // 留出 40px 容差,轻微偏离底部仍视为“在底部”
+    isPinnedToBottomRef.current = distanceToBottom < 40;
+  }
 
   /** 拉取历史会话列表（按最近更新倒序） */
   const loadConversations = useCallback(async () => {
@@ -97,6 +132,8 @@ export default function App() {
 
     setError(null);
     setConversationId(id);
+    // 切换会话后总是定位到最新消息
+    isPinnedToBottomRef.current = true;
 
     try {
       const data = await fetchConversationMessages(id);
@@ -139,6 +176,7 @@ export default function App() {
     setMessages([]);
     setConversationId(null);
     setError(null);
+    isPinnedToBottomRef.current = true;
   }
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
@@ -153,6 +191,8 @@ export default function App() {
     setError(null);
     setInput("");
     setIsStreaming(true);
+    // 用户发送新消息时,总是回到底部并跟随流式输出
+    isPinnedToBottomRef.current = true;
 
     const userMessage = createMessage("user", content);
     const assistantMessage = createMessage("assistant", "");
@@ -256,7 +296,7 @@ export default function App() {
       </aside>
 
       <div className="chat-window">
-        <main className="chat-panel">
+        <main className="chat-panel" ref={chatPanelRef} onScroll={handleChatScroll}>
           {messages.length === 0 ? (
             <div className="empty-state">
               <h2>开始一段对话</h2>

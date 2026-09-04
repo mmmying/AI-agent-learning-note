@@ -33,13 +33,16 @@ backend/
 │     schemas.py         ← Pydantic 模型
 │
 ├── core/
-│     config.py
+│     config.py          ← Pydantic Settings 配置
 │     logger.py
+│     paths.py           ← 统一管理项目路径
+│     db.py
+│     migrations.py
 ```
 
-main.py 只负责三件事：
-
+main.py 只负责：
 - 创建 FastAPI 应用
+- 数据库迁移
 - 注册路由
 - 做应用初始化（日志、配置、中间件等）
 
@@ -82,11 +85,21 @@ Route
 浏览器
 ```
 
+## 技术栈
+|领域 |选型 |说明 |
+| --- | --- | --- |
+|Web 框架 |FastAPI 0.139 + Uvicorn |ASGI，自带 OpenAPI 文档 |
+|数据校验 |Pydantic v2 |请求/响应模型与类型契约 |
+|AI SDK |openai 2.44 |通过 base_url 复用同一 SDK 调 DeepSeek |
+|数据库 |SQLite（标准库 sqlite3） |零依赖，手写迁移系统 |
+|流式传输 |SSE（StreamingResponse） |text/event-stream + 生成器 |
+|配置 |python-dotenv |.env 注入密钥与开关 |
+
 ## 核心思路
 
 - `system prompt` 放在 prompts/system.md，不要写死在代码里。
 - `多轮对话` 不应该由前端每次传一大堆历史，而是先由后端根据 conversation_id 管理。
-- `聊天记录保存` 先用 JSON 文件实现，后面再替换成 SQLite / PostgreSQL。
+- `聊天记录保存` 用 SQLite / PostgreSQL。
 - `流式输出` 先在后端用 FastAPI 的 StreamingResponse，前端再用 fetch 读取 stream
 - `React 前端` 只负责输入、展示、调用 /chat 或 /chat/stream，不要放 AI 逻辑。
 

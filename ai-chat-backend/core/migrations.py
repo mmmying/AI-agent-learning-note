@@ -1,13 +1,12 @@
 import logging
 import sqlite3
-from pathlib import Path
 
 from core.db import Database
 
-logger = logging.getLogger(__name__)
+# 迁移 SQL 文件按名称排序依次执行（因此用数字前缀命名，如 0001_xxx.sql）
+from core.paths import MIGRATIONS_DIR
 
-# 迁移 SQL 文件所在目录，文件按名称排序依次执行（因此用数字前缀命名，如 0001_xxx.sql）
-MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+logger = logging.getLogger(__name__)
 
 
 def _ensure_migrations_table(conn: sqlite3.Connection) -> None:

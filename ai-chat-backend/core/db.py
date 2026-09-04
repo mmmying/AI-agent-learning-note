@@ -1,8 +1,10 @@
 import sqlite3
 from pathlib import Path
 
+from core.paths import DB_PATH
+
 # 默认数据库文件路径
-DEFAULT_DB_PATH = Path("data/chat.db")
+DEFAULT_DB_PATH = DB_PATH
 
 
 class Database:

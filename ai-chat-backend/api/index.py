@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from models.schemas import ChatRequest, ChatResponse
 from services.chat_service import ChatService
+from core.config import settings
 
 # 创建一个路由模块
 router = APIRouter()
@@ -8,7 +9,10 @@ router = APIRouter()
 
 @router.get("/")
 def root() -> dict[str, str]:
-    return {"message": "server running"}
+    return {
+        "message": f"{settings.app_name} is running",
+        "env": settings.app_env,
+    }
 
 
 @router.get("/hello")

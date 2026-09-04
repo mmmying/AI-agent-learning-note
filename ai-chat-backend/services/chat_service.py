@@ -1,7 +1,7 @@
 import json
-from pathlib import Path
 from typing import Generator
 
+from core.paths import SYSTEM_PROMPT_FILE
 from models.schemas import ChatRequest, ChatResponse, Message
 from services.ai_client import AIClient
 from services.memory_store import MemoryStore
@@ -10,7 +10,7 @@ from services.memory_store import MemoryStore
 class ChatService:
     def __init__(self, memory_store: MemoryStore | None = None) -> None:
         self.memory_store = memory_store or MemoryStore()
-        self.system_prompt = Path("prompts/system.md").read_text(encoding="utf-8") # 读取系统提示词
+        self.system_prompt = SYSTEM_PROMPT_FILE.read_text(encoding="utf-8") # 读取系统提示词
 
     def chat(self, request: ChatRequest) -> ChatResponse:
         ai_client = AIClient(provider=request.provider)

@@ -34,7 +34,7 @@ class AIClient:
         try:
             logger.info("Sending request")
             # 发送请求
-            response = requests.post(
+            response = requests.get(
                 self.api_url,
                 json=payload,
                 timeout=self.timeout,

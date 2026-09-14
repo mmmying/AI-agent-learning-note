@@ -1,4 +1,6 @@
 ﻿certifi==2026.6.17
+fastapi==0.115.12
+uvicorn==0.34.0
 charset-normalizer==3.4.7
 idna==3.18
 requests==2.34.2

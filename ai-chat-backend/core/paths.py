@@ -11,9 +11,6 @@ ENV_FILE = BASE_DIR / ".env"
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "chat.db"
 
-# 数据库迁移 SQL 目录
-MIGRATIONS_DIR = BASE_DIR / "migrations"
-
 # 提示词目录与系统提示词文件
 PROMPTS_DIR = BASE_DIR / "prompts"
 SYSTEM_PROMPT_FILE = PROMPTS_DIR / "system.md"

@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     deepseek_reasoning_effort: Literal["minimal", "low", "medium", "high"] = "high"
 
     db_path: Path = DB_PATH
+    debug: bool = True
 
     # 日志级别
     log_level: LogLevel = "INFO"

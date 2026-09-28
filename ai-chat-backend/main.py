@@ -7,12 +7,12 @@ from api.conversations import router as conversations_router
 from api.index import router as index_router
 from core.config import settings
 from core.logger import setup_logging
-from core.migrations import run_migrations
+from db.database import init_db
 
 setup_logging()
 
-# 启动时执行数据库迁移，保证表结构是最新的
-run_migrations()
+# 启动时统一执行 ORM 表初始化
+init_db()
 
 # 创建整个应用
 app = FastAPI(title=settings.app_name)

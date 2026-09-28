@@ -1,4 +1,5 @@
 # 数据模型
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -27,5 +28,5 @@ class ConversationSummary(BaseModel):
     # 会话摘要，用于历史会话列表展示
     id: str
     title: str
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime

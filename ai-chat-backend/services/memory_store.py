@@ -1,11 +1,10 @@
 from uuid import uuid4
 
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.dialects.sqlite import insert
-
 from db.database import Database
 from db.orm_models import Conversation, MessageRecord
 from models.schemas import ConversationSummary, Message
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.sqlite import insert
 
 # 会话标题的最大长度（超出部分截断）
 TITLE_MAX_LENGTH = 50

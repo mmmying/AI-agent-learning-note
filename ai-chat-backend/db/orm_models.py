@@ -1,7 +1,8 @@
 """数据库表定义，供 ORM 初始化和数据访问使用。"""
 
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
+
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 

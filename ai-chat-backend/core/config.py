@@ -1,11 +1,9 @@
-from typing import Literal
 from pathlib import Path
+from typing import Literal
 
+from core.paths import DB_PATH, ENV_FILE
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-from core.paths import ENV_FILE, DB_PATH
-
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 

@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Generator
+from collections.abc import Generator
+from typing import Literal
+
 from models.schemas import Message
 from openai import OpenAI
-
-from typing import Literal
 
 Provider = Literal[
     "openai",
@@ -13,7 +13,6 @@ Provider = Literal[
 
 # 定义策略接口，不同的AI提供商都必须实现chat和chat_stream方法
 class AIProviderStrategy(ABC):
-
     @abstractmethod
     def chat(
         self,
@@ -32,7 +31,6 @@ class AIProviderStrategy(ABC):
 
 
 class OpenAICompatibleStrategy(AIProviderStrategy):
-
     def __init__(
         self,
         client: OpenAI,

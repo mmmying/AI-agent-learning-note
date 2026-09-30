@@ -1,12 +1,9 @@
-from typing import Literal
-from services.strategy import AIProviderStrategy
-from services.providers.openai_strategy import OpenAIStrategy
 from services.providers.deepseek_strategy import DeepSeekStrategy
-from services.strategy import Provider
+from services.providers.openai_strategy import OpenAIStrategy
+from services.strategy import AIProviderStrategy, Provider
 
 
 class AIProviderFactory:
-
     @staticmethod
     def create(
         provider: Provider,

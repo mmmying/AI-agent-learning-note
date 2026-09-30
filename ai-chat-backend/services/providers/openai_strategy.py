@@ -1,10 +1,9 @@
-from openai import OpenAI
 from core.config import settings
+from openai import OpenAI
 from services.strategy import OpenAICompatibleStrategy
 
 
 class OpenAIStrategy(OpenAICompatibleStrategy):
-
     def __init__(self, api_key: str | None = None):
 
         key = api_key or settings.openai_api_key

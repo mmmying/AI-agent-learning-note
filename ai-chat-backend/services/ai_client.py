@@ -1,13 +1,11 @@
-from typing import Generator
+from collections.abc import Generator
 
 from core.config import settings
 from models.schemas import Message
-from services.factory import AIProviderFactory
-from services.factory import Provider
+from services.factory import AIProviderFactory, Provider
 
 
 class AIClient:
-
     def __init__(
         self,
         provider: Provider | None = None,

@@ -7,6 +7,9 @@ python -m venv .venv
 # 安装依赖
 python -m pip install -r requirements.txt
 
+# 执行数据库迁移（应用启动时也会自动执行）
+alembic upgrade head
+
 # 启动服务
 uvicorn main:app --reload
 ```
@@ -35,7 +38,13 @@ backend/
 │
 ├── db/
 │     orm_models.py      ← 数据库表定义
-│     database.py        ← 数据库连接、Session 工厂和表初始化
+│     database.py        ← 数据库连接、Session 工厂和迁移入口
+│     migrations.py      ← 使用应用 Engine 执行 Alembic 升级
+│
+├── alembic.ini          ← Alembic 配置
+├── migrations/
+│     env.py             ← 迁移环境，复用应用配置和 ORM 元数据
+│     versions/          ← 可追踪的数据库版本历史
 │
 ├── core/
 │     config.py          ← Pydantic Settings 配置
@@ -45,7 +54,7 @@ backend/
 
 main.py 只负责：
 - 创建 FastAPI 应用
-- 数据库表初始化
+- 启动时升级数据库版本
 - 注册路由
 - 做应用初始化（日志、配置、中间件等）
 
@@ -112,19 +121,51 @@ Database          LLM Provider
 |Web 框架 |FastAPI 0.139 + Uvicorn |ASGI，自带 OpenAPI 文档 |
 |数据校验 |Pydantic v2 |请求/响应模型与类型契约 |
 |AI SDK |openai 2.44 |通过 base_url 复用同一 SDK 调 DeepSeek |
-|数据库 |SQLite + SQLAlchemy 2 ORM |Session 管理事务，ORM 初始化表结构 |
+|数据库 |SQLite + SQLAlchemy 2 ORM + Alembic |Session 管理事务，Alembic 管理表结构版本 |
 |流式传输 |SSE（StreamingResponse） |text/event-stream + 生成器 |
 |配置 |python-dotenv |.env 注入密钥与开关 |
 
 ## 核心思路
 
-数据库访问封装在 `MemoryStore`，`ChatService` 继续使用原有接口。`db/orm_models.py` 专门定义数据库表，`db/database.py` 管理连接、Session 工厂和表初始化。路由通过依赖注入获取请求级 Session，数据库层只负责创建、异常回滚和关闭，未提交的修改在关闭时丢弃；业务层显式调用 commit()，普通聊天在返回前提交整轮对话，流式聊天在发送 done 前提交，删除会话在返回前提交；会话删除通过数据库外键级联删除消息。db/database.py 定义进程级共享的 database 实例及 Engine，FastAPI lifespan 将其注册到 app.state.database，退出时释放 Engine；启动时调用 `init_db(database)`，通过 `Base.metadata.create_all()` 创建缺失的 ORM 表，保留已有表和数据。`create_all()` 不会修改已有表结构；后续字段变更需要手动更新数据库，或在确认开发数据可以丢弃后重建数据库，需要持续保留数据时可引入 Alembic 等迁移工具。
+数据库访问封装在 `MemoryStore`，`ChatService` 继续使用原有接口。`db/orm_models.py` 定义 ORM 模型，`db/database.py` 管理连接、Session 工厂和迁移入口。路由通过依赖注入获取请求级 Session，数据库层负责创建、异常回滚和关闭；业务层显式提交事务。普通聊天在返回前提交整轮对话，流式聊天在发送 done 前提交，删除会话在返回前提交；会话删除通过数据库外键级联删除消息。
+
+`db/database.py` 定义进程级共享的 `database` 实例及 Engine，FastAPI lifespan 将其注册到 `app.state.database`，退出时释放 Engine。启动时调用 `init_db(database)`，通过 Alembic 执行 `upgrade head`；版本记录存储在 `alembic_version` 表。迁移失败会阻止服务启动。应用不再调用 `create_all()`，修改模型后必须新增迁移文件并提交到版本控制。
 
 - `system prompt` 放在 prompts/system.md，不要写死在代码里。
 - `多轮对话` 不应该由前端每次传一大堆历史，而是先由后端根据 conversation_id 管理。
 - `聊天记录保存` 用 SQLite / PostgreSQL。
 - `流式输出` 先在后端用 FastAPI 的 StreamingResponse，前端再用 fetch 读取 stream
 - `React 前端` 只负责输入、展示、调用 /chat 或 /chat/stream，不要放 AI 逻辑。
+
+## 数据库迁移
+
+以下命令在项目根目录、使用项目虚拟环境执行。CLI 和应用都从 `core.config.settings.db_path` 读取数据库路径，默认是 `data/chat.db`，可通过 `.env` 或环境变量 `DB_PATH` 覆盖；相对路径相对于当前工作目录。迁移目录通过 `alembic.ini` 的位置定位。
+
+```powershell
+# 查看当前版本和迁移历史
+python -m alembic current
+python -m alembic history
+
+# 修改 db/orm_models.py 后生成迁移
+python -m alembic revision --autogenerate -m "add conversation field"
+
+# 检查生成的 upgrade/downgrade 后应用迁移
+python -m alembic upgrade head
+
+# 检查数据库与 ORM 模型是否一致
+python -m alembic check
+
+# 回退一个版本；请先停服务并备份数据库
+python -m alembic downgrade -1
+```
+
+`0001` 是初始迁移：空数据库直接建表；项目早期手写 SQL 创建的数据库会先检查表结构，再复制到与 ORM 一致的新表，保留会话、消息 ID、时间值、自增序号和 `schema_migrations` 历史表。复制和替换在同一事务中执行，外键始终开启。未知结构、额外字段或触发器会阻止自动接管，需为实际结构编写迁移。首次升级旧库前应停止服务并备份 SQLite 文件；测试在临时数据库和副本上执行。
+
+如果数据库已经由旧版 `Base.metadata.create_all()` 建成，且确认字段、约束和索引与 `migrations/versions/0001_initial_schema.py` **完全一致**，备份后可用 `python -m alembic stamp 0001` 登记初始版本，再执行 `python -m alembic upgrade head` 和 `python -m alembic check`。`stamp` 只写版本号，不修改结构，不能用于跳过结构差异。
+
+迁移环境开启 `render_as_batch=True`，自动生成的 SQLite 字段变更使用 batch 模式。自动生成不能可靠识别重命名，必须人工检查；涉及被引用的父表重建时，还需安排外键和数据复制顺序。[Alembic SQLite batch 文档](https://alembic.sqlalchemy.org/en/latest/batch.html)
+
+`downgrade base` 会删除会话和消息表。应用启动会重新升级到 head，因此回退数据库时应同时部署匹配版本的代码。
 
 ## 调用 DeepSeek API
 

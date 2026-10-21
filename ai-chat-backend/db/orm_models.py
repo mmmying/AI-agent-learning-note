@@ -1,4 +1,4 @@
-"""数据库表定义，供 ORM 初始化和数据访问使用。"""
+"""数据库表定义，供 Alembic 自动生成迁移和 ORM 数据访问使用。"""
 
 from datetime import datetime, timezone
 

@@ -1,4 +1,4 @@
-# 负责数据库连接、session工厂和初始化表
+# 负责数据库连接、Session 工厂和迁移入口
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -7,7 +7,7 @@ from core.config import settings
 from sqlalchemy import URL, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
-from db.orm_models import Base
+from db.migrations import upgrade_database
 
 
 class Database:
@@ -32,8 +32,8 @@ class Database:
         self._sessions = sessionmaker(bind=self.engine)
 
     def init_tables(self) -> None:
-        """根据 ORM 元数据创建缺失的表，不覆盖已有数据。"""
-        Base.metadata.create_all(self.engine)
+        """将数据库迁移到最新版本，保留现有初始化接口。"""
+        upgrade_database(self.engine)
 
     @staticmethod
     def _enable_foreign_keys(connection, _record) -> None:
@@ -60,7 +60,7 @@ class Database:
 
 
 def init_db(db: Database) -> None:
-    """应用启动入口：根据 ORM 模型创建缺失的表。"""
+    """应用启动入口：执行 Alembic upgrade head。"""
 
     db.init_tables()
 

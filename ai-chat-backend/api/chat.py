@@ -1,9 +1,7 @@
-from db.dependencies import SessionDep
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from models.schemas import ChatRequest, ChatResponse
-from services.chat_service import ChatService
-from services.memory_store import MemoryStore
+from services.dependencies import ChatServiceDep
 
 # 创建一个路由模块
 router = APIRouter(
@@ -13,14 +11,12 @@ router = APIRouter(
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest, session: SessionDep) -> ChatResponse:
-    chat_service = ChatService(memory_store=MemoryStore(session=session))
+def chat(request: ChatRequest, chat_service: ChatServiceDep) -> ChatResponse:
     return chat_service.chat(request)
 
 
 @router.post("/stream")
-def chat_stream(request: ChatRequest, session: SessionDep) -> StreamingResponse:
-    chat_service = ChatService(memory_store=MemoryStore(session=session))
+def chat_stream(request: ChatRequest, chat_service: ChatServiceDep) -> StreamingResponse:
     # 流式对话接口，以 SSE（text/event-stream）逐段返回回复
     return StreamingResponse(
         chat_service.chat_stream(request),

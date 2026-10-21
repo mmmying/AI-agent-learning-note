@@ -12,9 +12,9 @@ class Settings(BaseSettings):
     """应用配置：取值优先级为环境变量 > .env 文件 > 这里的默认值，启动时校验类型与取值范围"""
 
     model_config = SettingsConfigDict(
-        env_file=ENV_FILE,
-        env_file_encoding="utf-8",
-        case_sensitive=False,  # .env 里写 OPENAI_API_KEY，对应字段 openai_api_key
+        env_file=ENV_FILE,  # 自动加载 .env 文件
+        env_file_encoding="utf-8",  # 文件编码
+        case_sensitive=False,  # 不区分大小写
         extra="ignore",  # 忽略 .env 中多出来的键，避免报错
     )
 

@@ -1,21 +1,33 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from openai import APIError, AuthenticationError, RateLimitError
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from api.chat import router as chat_router
 from api.conversations import router as conversations_router
 from api.index import router as index_router
 from core.config import settings
 from core.logger import setup_logging
-from db.database import init_db
+from db.database import database, init_db
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from openai import APIError, AuthenticationError, RateLimitError
 
 setup_logging()
 
-# 启动时统一执行 ORM 表初始化
-init_db()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # 复用 db.database 中的共享实例，每次请求创建独立 Session。
+    app.state.database = database
+    try:
+        init_db(database)
+        yield
+    finally:
+        database.engine.dispose()
+        del app.state.database
+
 
 # 创建整个应用
-app = FastAPI(title=settings.app_name)
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 
 @app.exception_handler(RateLimitError)

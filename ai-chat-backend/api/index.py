@@ -1,7 +1,5 @@
-from fastapi import APIRouter
-from models.schemas import ChatRequest, ChatResponse
-from services.chat_service import ChatService
 from core.config import settings
+from fastapi import APIRouter, Header
 
 # 创建一个路由模块
 router = APIRouter()
@@ -30,3 +28,8 @@ def search(query: str):
 @router.get("/user/{user_id}")
 def get_user(user_id: int):
     return {"id": user_id}
+
+
+@router.get("/test")
+def test(user_agent: str = Header()):
+    return {"user_agent": user_agent}

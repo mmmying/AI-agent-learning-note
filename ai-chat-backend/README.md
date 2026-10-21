@@ -27,7 +27,8 @@ backend/
 │
 ├── services/
 │     ai_client.py       ← 调用 OpenAI
-│     chat_service.py    ← 聊天业务
+│     chat_service.py    ← 负责 AI 对话的业务流程，属于业务编排层
+|     memory_store.py    ← 负责对话历史的持久化存储和管理，属于数据持久化层
 │
 ├── models/
 │     schemas.py         ← Pydantic 模型
@@ -87,6 +88,24 @@ Route
 浏览器
 ```
 
+chat_service 和 memory.store.py 调用关系：
+```
+  api 接口
+     ↓
+  ChatService
+  chat()/chat_stream()
+   ↓                ↓
+MemoryStore       AIClient
+保存/读取对话      调用大模型
+会话管理           生成回复
+   ↓                ↓
+Database          LLM Provider
+```
+- ChatService 接收消息，组织上下文，调用AI，返回回复
+- MemoryStore 保存消息，读取历史，管理会话
+- AIClient 与大模型交互
+- Database 提供数据库会话
+
 ## 技术栈
 |领域 |选型 |说明 |
 | --- | --- | --- |
@@ -99,7 +118,7 @@ Route
 
 ## 核心思路
 
-数据库访问封装在 `MemoryStore`，`ChatService` 继续使用原有接口。`db/orm_models.py` 专门定义数据库表，`db/database.py` 管理连接、Session 工厂和表初始化。每次存储操作使用独立 Session，成功提交、失败回滚；会话删除通过数据库外键级联删除消息。启动时调用 `init_db()`，通过 `Base.metadata.create_all()` 创建缺失的 ORM 表，保留已有表和数据。`create_all()` 不会修改已有表结构；后续字段变更需要手动更新数据库，或在确认开发数据可以丢弃后重建数据库，需要持续保留数据时可引入 Alembic 等迁移工具。
+数据库访问封装在 `MemoryStore`，`ChatService` 继续使用原有接口。`db/orm_models.py` 专门定义数据库表，`db/database.py` 管理连接、Session 工厂和表初始化。路由通过依赖注入获取请求级 Session，数据库层只负责创建、异常回滚和关闭，未提交的修改在关闭时丢弃；业务层显式调用 commit()，普通聊天在返回前提交整轮对话，流式聊天在发送 done 前提交，删除会话在返回前提交；会话删除通过数据库外键级联删除消息。db/database.py 定义进程级共享的 database 实例及 Engine，FastAPI lifespan 将其注册到 app.state.database，退出时释放 Engine；启动时调用 `init_db(database)`，通过 `Base.metadata.create_all()` 创建缺失的 ORM 表，保留已有表和数据。`create_all()` 不会修改已有表结构；后续字段变更需要手动更新数据库，或在确认开发数据可以丢弃后重建数据库，需要持续保留数据时可引入 Alembic 等迁移工具。
 
 - `system prompt` 放在 prompts/system.md，不要写死在代码里。
 - `多轮对话` 不应该由前端每次传一大堆历史，而是先由后端根据 conversation_id 管理。

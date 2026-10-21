@@ -8,11 +8,10 @@ from services.memory_store import MemoryStore
 
 
 class ChatService:
-    def __init__(self, memory_store: MemoryStore | None = None) -> None:
-        self.memory_store = memory_store or MemoryStore()
-        self.system_prompt = SYSTEM_PROMPT_FILE.read_text(
-            encoding="utf-8"
-        )  # 读取系统提示词
+    # 初始化建立存储依赖和系统提示词
+    def __init__(self, memory_store: MemoryStore) -> None:
+        self.memory_store = memory_store
+        self.system_prompt = SYSTEM_PROMPT_FILE.read_text(encoding="utf-8")
 
     def chat(self, request: ChatRequest) -> ChatResponse:
         ai_client = AIClient(provider=request.provider)
@@ -37,6 +36,8 @@ class ChatService:
             Message(role="assistant", content=reply),
         )
 
+        # 一轮对话作为一个事务，持久化成功后再返回回复。
+        self.memory_store.session.commit()
         return ChatResponse(
             conversation_id=conversation_id,
             reply=reply,
@@ -73,6 +74,8 @@ class ChatService:
             Message(role="assistant", content=reply),
         )
 
+        # 提交失败时不发送 done，由 Session 依赖兜底回滚。
+        self.memory_store.session.commit()
         yield self._sse_event({"type": "done", "conversation_id": conversation_id})
 
     @staticmethod

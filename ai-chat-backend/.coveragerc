@@ -1,0 +1,5 @@
+[run]
+source = api,core,db,models,services,main
+
+[report]
+show_missing = True

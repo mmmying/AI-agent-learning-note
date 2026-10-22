@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import pytest
 from datetime import datetime
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from models.schemas import Message
 from services.memory_store import MemoryStore
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+
+pytestmark = pytest.mark.database
 
 
 class MemoryStoreTests(unittest.TestCase):

@@ -3,6 +3,7 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+import pytest
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +16,8 @@ from db.database import Database, init_db
 from db.migrations import migration_config
 from db.orm_models import Base
 from sqlalchemy import inspect, text
+
+pytestmark = pytest.mark.database
 
 
 class MigrationTests(unittest.TestCase):

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import pytest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from services.memory_store import MemoryStore
 from sqlalchemy.orm import Session
+
+pytestmark = [pytest.mark.database, pytest.mark.api]
 
 
 class SessionDependencyTests(unittest.TestCase):

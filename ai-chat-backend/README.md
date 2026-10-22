@@ -18,6 +18,34 @@ uvicorn main:app --reload
 ![1](./images/image1.png)
 ![2](./images/image2.png)
 
+## 自动化测试
+
+测试使用 pytest，兼容原有 unittest 用例；使用 FastAPI TestClient 和临时 SQLite 数据库，无需启动服务或配置 AI 密钥。
+
+```powershell
+# 安装运行和测试依赖（Python 3.11+）
+python -m pip install -r requirements-dev.txt
+
+# 执行全部测试 / 只执行数据库测试 / 只执行接口测试
+python -m pytest
+python -m pytest -m database
+python -m pytest -m api
+
+# 输出覆盖率、XML 和 JUnit 报告，供 CI 采集
+python -m pytest --cov --cov-report=term-missing --cov-report=xml --junitxml=junit.xml
+
+# Windows 一键执行，可指定独立测试环境
+./scripts/test.ps1 -Python ./.venv/Scripts/python.exe -Coverage
+```
+
+`tests/conftest.py` 在导入应用前将 `DB_PATH` 指向临时目录，覆盖测试环境与 AI 密钥。`database` fixture 为每个用例分配独立数据库，并使用 Alembic 初始化。`client` fixture 执行真实的应用启动、迁移与关闭流程，AI 响应使用 mock，并阻止 HTTPX 发出真实网络请求。测试不会读写 `data/chat.db`，Engine 释放后清理临时文件。
+
+测试覆盖普通/多轮聊天、请求校验、会话查询与删除、SSE 事件和落库、AI 异常、流式失败及提交失败回滚、SQLite 外键和非空约束、级联删除、Session 生命周期，以及新库/旧库迁移和结构一致性。`database` 标记包含数据库集成及接口落库测试。
+
+测试失败时退出码非零；CI 可执行上述 pytest 报告命令。生成的报告和缓存已加入忽略规则。
+
+测试临时文件统一放在项目的 `.test-tmp/run-*` 独立目录，结束后自动清理，避免 Windows 系统临时目录 `pytest-of-*` 的访问权限问题。也可通过 `--basetemp` 显式指定 pytest 临时目录；pytest 会清空该指定目录，请仅使用专门的测试目录。
+
 ## 项目结构
 
 ```

@@ -3,3 +3,10 @@ __pycache__/
 .env
 .env.*
 !.env.example
+.pytest_cache/
+.test-tmp/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+junit.xml

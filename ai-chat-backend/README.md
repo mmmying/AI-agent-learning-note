@@ -227,3 +227,31 @@ https://api-docs.deepseek.com/zh-cn/
 ## 流式输出
 
 流式输出的核心思想：生成器不断 yield 新的数据，StreamingResponse 每得到一个值就立即发送给客户端
+
+## JWT 用户认证与多用户聊天
+
+先安装最新 `requirements.txt`，再启动后端和 `ai-chat-frontend`（前端执行 `npm install`、`npm run dev`）。前端通过 Vite 的 `/api` 代理访问后端；生产部署也需要将 `/api/*` 转发到后端并去掉 `/api` 前缀。
+
+前端支持注册、登录、退出和页面刷新后恢复登录状态。用户名为 3–32 位字母、数字或下划线，自动转成小写；密码为 8–128 位字符，使用 Argon2 哈希保存。注册成功会直接登录。
+
+| 接口 | 请求 / 用途 |
+| --- | --- |
+| `POST /auth/register` | JSON `{"username":"alice","password":"your-password"}`，注册并返回令牌与用户信息 |
+| `POST /auth/login` | 相同 JSON 格式，登录并返回令牌与用户信息 |
+| `GET /auth/me` | 查询当前用户 |
+
+除注册、登录和健康检查外，聊天和会话接口均要求 `Authorization: Bearer <access_token>`。JWT 使用 HS256，校验签名、有效期、签发者和受众；默认有效期为 60 分钟，通过 `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` 配置。前端将令牌存于 `sessionStorage`，关闭标签页后清除；退出会清除本地令牌和聊天状态，中止正在生成的回复。令牌过期或无效时返回登录页。本实现没有刷新令牌和服务器端注销列表，已签发的令牌到期前仍有效。
+
+在 `.env` 中设置 `JWT_SECRET_KEY`（至少 32 字符），可执行以下命令生成：
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+开发环境未设置密钥时，每个进程生成随机密钥，重启后须重新登录；多进程或多实例部署必须使用相同的持久密钥。`APP_ENV=production` 时缺少密钥会拒绝启动。生产部署应通过 HTTPS 访问。
+
+启动时自动应用迁移 `0002`，增加 `users` 表及 `conversations.user_id` 外键与索引。升级前请先停止服务并备份数据库。已有会话和消息完整保留，用户归属为 NULL，不会自动分配给任何新账号；如需认领，需由管理员核实归属后单独迁移。
+
+会话列表、消息读取、继续聊天和删除都按当前用户过滤。访问其他用户、未分配或不存在的会话统一返回 404。新聊天应不传 `conversation_id`（或传 NULL），由服务端生成 ID；传入 ID 表示继续已有的本人会话。流式接口在发送 SSE 响应前检查权限。AI 服务商的密钥错误返回 502，避免与用户 JWT 的 401 混淆。
+
+认证实现参考 [FastAPI 官方 JWT 与密码哈希文档](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/)。

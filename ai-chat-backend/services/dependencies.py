@@ -2,15 +2,16 @@
 
 from typing import Annotated
 
+from core.security import CurrentUserDep
 from db.dependencies import SessionDep
 from fastapi import Depends
 from services.chat_service import ChatService
 from services.memory_store import MemoryStore
 
 
-def get_memory_store(session: SessionDep) -> MemoryStore:
+def get_memory_store(session: SessionDep, user: CurrentUserDep) -> MemoryStore:
     """使用请求级 Session 创建会话存储。"""
-    return MemoryStore(session=session)
+    return MemoryStore(session=session, user_id=user.id)
 
 
 MemoryStoreDep = Annotated[MemoryStore, Depends(get_memory_store)]

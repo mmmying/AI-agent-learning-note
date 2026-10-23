@@ -3,6 +3,8 @@
  * 所有请求都走 /api 前缀，由 Vite 代理转发到后端服务。
  */
 
+import { apiFetch } from "./auth";
+
 export type Role = "user" | "assistant";
 
 /** 后端返回的消息结构 */
@@ -68,7 +70,7 @@ function parseSSEEventData(rawEvent: string): SSEEventData | null {
  * 获取历史会话列表（按最近更新倒序）
  */
 export async function fetchConversations(): Promise<ConversationSummary[]> {
-  const response = await fetch("/api/conversations");
+  const response = await apiFetch("/conversations");
 
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
@@ -84,7 +86,7 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
 export async function fetchConversationMessages(
   conversationId: string
 ): Promise<ApiMessage[]> {
-  const response = await fetch(`/api/conversations/${conversationId}/messages`);
+  const response = await apiFetch(`/conversations/${encodeURIComponent(conversationId)}/messages`);
 
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
@@ -98,7 +100,7 @@ export async function fetchConversationMessages(
  * @param conversationId 会话 ID
  */
 export async function deleteConversation(conversationId: string): Promise<void> {
-  const response = await fetch(`/api/conversations/${conversationId}`, {
+  const response = await apiFetch(`/conversations/${encodeURIComponent(conversationId)}`, {
     method: "DELETE",
   });
 
@@ -118,7 +120,7 @@ export async function streamChat({
   onDelta,
   onDone,
 }: StreamChatParams): Promise<void> {
-  const response = await fetch("/api/chat/stream", {
+  const response = await apiFetch("/chat/stream", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

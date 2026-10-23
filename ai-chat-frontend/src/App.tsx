@@ -13,6 +13,8 @@ import {
   streamChat,
 } from "./api/chat";
 import "./App.css";
+import AuthGate from "./AuthGate";
+import type { User } from "./api/auth";
 
 type ChatMessage = {
   id: string;
@@ -59,6 +61,10 @@ function createMessage(role: Role, content: string): ChatMessage {
 }
 
 export default function App() {
+  return <AuthGate>{(user, logout) => <ChatApp key={user.id} user={user} logout={logout} />}</AuthGate>;
+}
+
+function ChatApp({ user, logout }: { user: User; logout: () => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -71,6 +77,7 @@ export default function App() {
   );
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => () => { abortControllerRef.current?.abort(); }, []);
   /** 聊天消息的滚动容器 */
   const chatPanelRef = useRef<HTMLElement | null>(null);
   /**
@@ -252,6 +259,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <h1>AI Chat</h1>
+          <div className="account-bar"><span>{user.username}</span><button onClick={logout}>退出登录</button></div>
           <button className="new-chat-button" onClick={startNewChat}>
             + 新对话
           </button>

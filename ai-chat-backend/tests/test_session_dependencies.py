@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from api.chat import router as chat_router
+from api.auth import router as auth_router
 from api.conversations import router as conversations_router
 from db.database import Database
 from db.dependencies import get_database
@@ -23,10 +24,16 @@ class SessionDependencyTests(unittest.TestCase):
         self.database.init_tables()
         app = FastAPI()
         app.include_router(chat_router)
+        app.include_router(auth_router)
         app.include_router(conversations_router)
         # 当 FastAPI 需要调用 get_database() 时，改为调用这个 lambda，返回测试数据库
         app.dependency_overrides[get_database] = lambda: self.database
         self.client = TestClient(app)
+        response = self.client.post("/auth/register", json={
+            "username": "session_user", "password": "test-password-123",
+        })
+        self.user_id = response.json()["user"]["id"]
+        self.client.headers["Authorization"] = f"Bearer {response.json()['access_token']}"
 
     def tearDown(self):
         self.client.close()
@@ -55,7 +62,7 @@ class SessionDependencyTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.client.post("/chat/chat", json={"message": "hello"})
         with self.database.session() as session:
-            self.assertEqual(MemoryStore(session).list_conversations(), [])
+            self.assertEqual(MemoryStore(session, self.user_id).list_conversations(), [])
 
     def test_stream_keeps_session_until_completion(self):
         with patch("services.chat_service.AIClient") as client:
@@ -64,7 +71,7 @@ class SessionDependencyTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('"type": "done"', response.text)
         with self.database.session() as session:
-            store = MemoryStore(session)
+            store = MemoryStore(session, self.user_id)
             conversation = store.list_conversations()[0]
             self.assertEqual(
                 [m.content for m in store.get_messages(conversation.id)],
@@ -82,4 +89,4 @@ class SessionDependencyTests(unittest.TestCase):
             ):
                 self.client.post("/chat/chat", json={"message": "hello"})
         with self.database.session() as session:
-            self.assertEqual(MemoryStore(session).list_conversations(), [])
+            self.assertEqual(MemoryStore(session, self.user_id).list_conversations(), [])

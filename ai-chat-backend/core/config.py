@@ -1,8 +1,9 @@
+import secrets
 from pathlib import Path
 from typing import Literal
 
 from core.paths import DB_PATH, ENV_FILE
-from pydantic import field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -39,6 +40,19 @@ class Settings(BaseSettings):
 
     db_path: Path = DB_PATH
     debug: bool = True
+    jwt_secret_key: str = Field(
+        default_factory=lambda: secrets.token_urlsafe(48), min_length=32, repr=False
+    )
+    jwt_access_token_expire_minutes: int = Field(default=60, ge=1, le=10080)
+
+    @model_validator(mode="after")
+    def _production_secret(self):
+        if (
+            self.app_env == "production"
+            and "jwt_secret_key" not in self.model_fields_set
+        ):
+            raise ValueError("production 环境必须配置 JWT_SECRET_KEY（至少 32 字符）")
+        return self
 
     # 日志级别
     log_level: LogLevel = "INFO"

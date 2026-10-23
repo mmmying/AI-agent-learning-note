@@ -75,7 +75,7 @@ class MemoryStoreTests(unittest.TestCase):
     def test_existing_data_and_sort_order(self):
         with self.db.engine.begin() as conn:
             conn.exec_driver_sql(
-                "INSERT INTO conversations VALUES (?, ?, ?, ?)",
+                "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
                 ("old", "原有标题", "2020-01-01 00:00:00", "2020-01-01 00:00:00"),
             )
             conn.exec_driver_sql(

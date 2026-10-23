@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from api.auth import router as auth_router
 from api.chat import router as chat_router
 from api.conversations import router as conversations_router
 from api.index import router as index_router
@@ -44,7 +45,7 @@ async def openai_rate_limit_handler(_: Request, exc: RateLimitError) -> JSONResp
 @app.exception_handler(AuthenticationError)
 async def openai_auth_handler(_: Request, exc: AuthenticationError) -> JSONResponse:
     return JSONResponse(
-        status_code=401,
+        status_code=502,
         content={
             "detail": "AI API 密钥无效或未授权，请检查 .env 中的 OPENAI_API_KEY 或 DEEPSEEK_API_KEY",
             "error": str(exc),
@@ -65,5 +66,6 @@ async def openai_api_handler(_: Request, exc: APIError) -> JSONResponse:
 
 # 把 Router 注册到 FastAPI 应用中
 app.include_router(index_router)
+app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(conversations_router)

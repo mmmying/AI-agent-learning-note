@@ -41,7 +41,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0001",
+                "0002",
             )
             context = MigrationContext.configure(connection)
             self.assertEqual(compare_metadata(context, Base.metadata), [])
@@ -59,11 +59,12 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("messages", inspect(self.db.engine).get_table_names())
 
     def test_stamp_adopts_existing_orm_database_without_losing_data(self):
-        # 模拟接入 Alembic 前由 create_all 创建的数据库。
-        Base.metadata.create_all(self.db.engine)
+        # 使用冻结的初始迁移模拟旧 ORM 表结构（当前 Base 已含用户字段）。
+        self.run_command(command.upgrade, "0001")
+        self.run_command(command.stamp, "base")
         with self.db.engine.begin() as connection:
             connection.exec_driver_sql(
-                "INSERT INTO conversations VALUES (?, ?, ?, ?)",
+                "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
                 ("old", "历史会话", "2020-01-01", "2020-01-01"),
             )
             connection.exec_driver_sql(
@@ -171,7 +172,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0001",
+                "0002",
             )
 
     def test_offline_sql_generation_does_not_create_database(self):
@@ -192,6 +193,7 @@ class MigrationTests(unittest.TestCase):
             shutil.copy(
                 BASE_DIR / "migrations/versions/0001_initial_schema.py", generated
             )
+            shutil.copy(BASE_DIR / "migrations/versions/0002_users.py", generated)
             config.set_main_option("version_locations", generated)
             with self.db.engine.begin() as connection:
                 config.attributes["connection"] = connection

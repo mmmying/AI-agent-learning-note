@@ -118,4 +118,10 @@ def client(app, ai_client):
 
     # 进入上下文，真实执行应用的数据库迁移与关闭生命周期。
     with TestClient(app) as test_client:
+        response = test_client.post("/auth/register", json={
+            "username": "test_user", "password": "test-password-123",
+        })
+        assert response.status_code == 201
+        test_client.headers["Authorization"] = f"Bearer {response.json()['access_token']}"
+        test_client.user_id = response.json()["user"]["id"]
         yield test_client

@@ -25,7 +25,7 @@ def test_chat_persists_full_round(client, database, ai_client, provider):
     conversation_id = response.json()["conversation_id"]
     assert response.json()["reply"] == "测试回复"
     with database.session() as session:
-        store = MemoryStore(session)
+        store = MemoryStore(session, client.user_id)
         assert [m.content for m in store.get_messages(conversation_id)] == ["你好", "测试回复"]
         assert store.list_conversations()[0].title == "你好"
     ai_client.chat.assert_called_once()
@@ -52,7 +52,7 @@ def test_invalid_chat_does_not_write(client, database, ai_client, endpoint, payl
     ai_client.chat.assert_not_called()
     ai_client.chat_stream.assert_not_called()
     with database.session() as session:
-        assert MemoryStore(session).list_conversations() == []
+        assert MemoryStore(session, client.user_id).list_conversations() == []
 
 
 def test_conversation_list_messages_and_delete(client, database):
@@ -98,11 +98,11 @@ def test_stream_events_and_persistence(client, database):
         {"type": "done", "conversation_id": conversation_id},
     ]
     with database.session() as session:
-        assert [m.content for m in MemoryStore(session).get_messages(conversation_id)] == ["你好", "测试回复"]
+        assert [m.content for m in MemoryStore(session, client.user_id).get_messages(conversation_id)] == ["你好", "测试回复"]
 
 
 @pytest.mark.parametrize("error_type,status", [
-    (AuthenticationError, 401), (RateLimitError, 429), (APIError, 502),
+    (AuthenticationError, 502), (RateLimitError, 429), (APIError, 502),
 ])
 def test_ai_errors_are_mapped_and_rolled_back(client, database, ai_client, error_type, status):
     request = httpx.Request("POST", "https://ai.invalid")
@@ -115,7 +115,7 @@ def test_ai_errors_are_mapped_and_rolled_back(client, database, ai_client, error
     assert response.status_code == status
     assert response.json()["detail"]
     with database.session() as session:
-        assert MemoryStore(session).list_conversations() == []
+        assert MemoryStore(session, client.user_id).list_conversations() == []
 
 
 def test_stream_failure_preserves_previous_round(client, database, ai_client):
@@ -129,7 +129,7 @@ def test_stream_failure_preserves_previous_round(client, database, ai_client):
     with pytest.raises(RuntimeError, match="stream failed"):
         client.post("/chat/stream", json={"message": "失败", "conversation_id": conversation_id})
     with database.session() as session:
-        assert [m.content for m in MemoryStore(session).get_messages(conversation_id)] == ["已保存", "测试回复"]
+        assert [m.content for m in MemoryStore(session, client.user_id).get_messages(conversation_id)] == ["已保存", "测试回复"]
 
 
 def test_stream_commit_failure_rolls_back(client, database, monkeypatch):
@@ -140,4 +140,4 @@ def test_stream_commit_failure_rolls_back(client, database, monkeypatch):
     with pytest.raises(RuntimeError, match="commit failed"):
         client.post("/chat/stream", json={"message": "失败"})
     with database.session() as session:
-        assert MemoryStore(session).list_conversations() == []
+        assert MemoryStore(session, client.user_id).list_conversations() == []

@@ -1,0 +1,54 @@
+name: 后端 CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ai-chat-backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ai-chat-backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 测试 (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-chat-backend
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            ai-chat-backend/requirements.txt
+            ai-chat-backend/requirements-dev.txt
+
+      - name: 安装依赖
+        run: pip install -r requirements-dev.txt
+
+      - name: 运行测试
+        run: pytest --junitxml=junit.xml --cov --cov-report=xml --cov-report=term
+
+      - name: 上传测试报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-report-${{ matrix.python-version }}
+          path: |
+            ai-chat-backend/junit.xml
+            ai-chat-backend/coverage.xml

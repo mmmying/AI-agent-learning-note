@@ -3,11 +3,11 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
-import pytest
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
@@ -41,7 +41,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0002",
+                "0003",
             )
             context = MigrationContext.configure(connection)
             self.assertEqual(compare_metadata(context, Base.metadata), [])
@@ -172,7 +172,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0002",
+                "0003",
             )
 
     def test_offline_sql_generation_does_not_create_database(self):
@@ -194,6 +194,9 @@ class MigrationTests(unittest.TestCase):
                 BASE_DIR / "migrations/versions/0001_initial_schema.py", generated
             )
             shutil.copy(BASE_DIR / "migrations/versions/0002_users.py", generated)
+            shutil.copy(
+                BASE_DIR / "migrations/versions/0003_auth_rate_limits.py", generated
+            )
             config.set_main_option("version_locations", generated)
             with self.db.engine.begin() as connection:
                 config.attributes["connection"] = connection

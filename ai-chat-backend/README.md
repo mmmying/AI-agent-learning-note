@@ -255,3 +255,9 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 会话列表、消息读取、继续聊天和删除都按当前用户过滤。访问其他用户、未分配或不存在的会话统一返回 404。新聊天应不传 `conversation_id`（或传 NULL），由服务端生成 ID；传入 ID 表示继续已有的本人会话。流式接口在发送 SSE 响应前检查权限。AI 服务商的密钥错误返回 502，避免与用户 JWT 的 401 混淆。
 
 认证实现参考 [FastAPI 官方 JWT 与密码哈希文档](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/)。
+
+注册和登录按规范化后的用户名独立限流：默认每 60 秒最多注册 3 次、登录 5 次，成功、用户名重复和密码错误均计入次数；参数校验失败的 422 请求不计入。窗口从该账号对应操作的首次请求开始，过期后重置；超限请求返回 429 和以秒为单位的 `Retry-After` 响应头，不延长窗口。不同账号、注册与登录之间互不占用额度，当前用户查询不受此限制。
+
+可在 `.env` 中调整 `AUTH_REGISTER_RATE_LIMIT`、`AUTH_REGISTER_RATE_WINDOW_SECONDS`、`AUTH_LOGIN_RATE_LIMIT`、`AUTH_LOGIN_RATE_WINDOW_SECONDS`，修改后重启服务。计数通过独立事务保存在 SQLite 的 `auth_rate_limits` 表，登录失败或注册失败不会回滚计数，重启和共享同一数据库文件的多个进程会沿用计数；过期记录会自动清理。迁移 `0003` 在启动时自动执行，不修改已有用户与会话。这里只按账号限流，不包含按 IP 限制。
+
+用户名去除首尾空格并转为小写后，注册会先检查唯一性，已存在时返回 409 并跳过密码哈希；数据库唯一约束继续保护并发注册，只有用户名冲突映射为 409，其他数据库约束错误不再误报为用户名重复。

@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -23,6 +23,16 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
+
+
+class AuthRateLimit(Base):
+    __tablename__ = "auth_rate_limits"
+    __table_args__ = (Index("ix_auth_rate_limits_expires_at", "expires_at"),)
+
+    action: Mapped[str] = mapped_column(String(16), primary_key=True)
+    username: Mapped[str] = mapped_column(String(32), primary_key=True)
+    attempts: Mapped[int] = mapped_column(nullable=False)
+    expires_at: Mapped[float] = mapped_column(Float, nullable=False)
 
 
 class Conversation(Base):

@@ -44,6 +44,10 @@ class Settings(BaseSettings):
         default_factory=lambda: secrets.token_urlsafe(48), min_length=32, repr=False
     )
     jwt_access_token_expire_minutes: int = Field(default=60, ge=1, le=10080)
+    auth_register_rate_limit: int = Field(default=3, ge=1, le=10000)
+    auth_login_rate_limit: int = Field(default=5, ge=1, le=10000)
+    auth_register_rate_window_seconds: int = Field(default=60, ge=1, le=86400)
+    auth_login_rate_window_seconds: int = Field(default=60, ge=1, le=86400)
 
     @model_validator(mode="after")
     def _production_secret(self):

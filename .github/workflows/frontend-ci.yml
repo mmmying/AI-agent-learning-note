@@ -2,12 +2,12 @@ name: 前端 CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "ai-chat-frontend/**"
       - ".github/workflows/frontend-ci.yml"
   pull_request:
-    branches: [main]
+    branches: [master]
     paths:
       - "ai-chat-frontend/**"
       - ".github/workflows/frontend-ci.yml"

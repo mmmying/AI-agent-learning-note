@@ -1,10 +1,10 @@
 from uuid import uuid4
-from fastapi import HTTPException
 
+from db.dialect import insert_statement, now_expression
 from db.orm_models import Conversation, MessageRecord
+from fastapi import HTTPException
 from models.schemas import ConversationSummary, Message
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 # 会话标题的最大长度（超出部分截断）
@@ -26,7 +26,8 @@ class MemoryStore:
     def list_conversations(self) -> list[ConversationSummary]:
         session = self.session
         conversations = session.scalars(
-            select(Conversation).where(Conversation.user_id == self.user_id)
+            select(Conversation)
+            .where(Conversation.user_id == self.user_id)
             .order_by(Conversation.updated_at.desc())
         )
         return [
@@ -43,17 +44,24 @@ class MemoryStore:
     def delete_conversation(self, conversation_id: str) -> bool:
         session = self.session
         result = session.execute(
-            delete(Conversation).where(Conversation.id == conversation_id,
-                                       Conversation.user_id == self.user_id)
+            delete(Conversation).where(
+                Conversation.id == conversation_id, Conversation.user_id == self.user_id
+            )
         )
         return result.rowcount > 0
 
     # 判断指定会话是否存在
     def conversation_exists(self, conversation_id: str) -> bool:
         session = self.session
-        return session.scalar(select(Conversation.id).where(
-            Conversation.id == conversation_id, Conversation.user_id == self.user_id
-        )) is not None
+        return (
+            session.scalar(
+                select(Conversation.id).where(
+                    Conversation.id == conversation_id,
+                    Conversation.user_id == self.user_id,
+                )
+            )
+            is not None
+        )
 
     def require_conversation(self, conversation_id: str) -> None:
         if not self.conversation_exists(conversation_id):
@@ -65,8 +73,10 @@ class MemoryStore:
         records = session.scalars(
             select(MessageRecord)
             .join(Conversation)
-            .where(MessageRecord.conversation_id == conversation_id,
-                   Conversation.user_id == self.user_id)
+            .where(
+                MessageRecord.conversation_id == conversation_id,
+                Conversation.user_id == self.user_id,
+            )
             .order_by(MessageRecord.id)
         )
         return [Message(role=row.role, content=row.content) for row in records]
@@ -75,10 +85,11 @@ class MemoryStore:
     # 完成了三个关联操作：确保会话存在 → 写入消息 → 更新时间
     def add_message(self, conversation_id: str, message: Message) -> None:
         session = self.session
-        now = func.datetime("now", "localtime")
+        dialect = session.get_bind().dialect.name
+        now = now_expression(dialect)
         # 原子 upsert 兼容并发创建，并保留首条消息生成的标题。
         session.execute(
-            insert(Conversation)
+            insert_statement(dialect)(Conversation)
             .values(
                 id=conversation_id,
                 user_id=self.user_id,
@@ -100,7 +111,9 @@ class MemoryStore:
         )
         session.execute(
             update(Conversation)
-            .where(Conversation.id == conversation_id, Conversation.user_id == self.user_id)
+            .where(
+                Conversation.id == conversation_id, Conversation.user_id == self.user_id
+            )
             .values(updated_at=now)
         )
         session.flush()

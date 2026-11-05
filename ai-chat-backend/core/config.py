@@ -5,6 +5,7 @@ from typing import Literal
 from core.paths import DB_PATH, ENV_FILE
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine.url import URL
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -39,6 +40,11 @@ class Settings(BaseSettings):
     deepseek_reasoning_effort: Literal["minimal", "low", "medium", "high"] = "high"
 
     db_path: Path = DB_PATH
+    # 生产用 PostgreSQL 连接串（如 postgresql+psycopg://user:pwd@host:5432/db），
+    # 留空则退回 db_path 上的 SQLite，仅用于本地开发和测试。
+    database_url: str = ""
+    # 限流计数等跨进程共享状态存放的 Redis。
+    redis_url: str = "redis://127.0.0.1:6379/0"
     debug: bool = True
     jwt_secret_key: str = Field(
         default_factory=lambda: secrets.token_urlsafe(48), min_length=32, repr=False
@@ -50,13 +56,24 @@ class Settings(BaseSettings):
     auth_login_rate_window_seconds: int = Field(default=60, ge=1, le=86400)
 
     @model_validator(mode="after")
-    def _production_secret(self):
-        if (
-            self.app_env == "production"
-            and "jwt_secret_key" not in self.model_fields_set
-        ):
+    def _production_requirements(self):
+        if self.app_env != "production":
+            return self
+        if "jwt_secret_key" not in self.model_fields_set:
             raise ValueError("production 环境必须配置 JWT_SECRET_KEY（至少 32 字符）")
+        if not self.database_url.startswith("postgresql"):
+            raise ValueError(
+                "production 环境必须配置 PostgreSQL 的 DATABASE_URL，"
+                "SQLite 只用于本地开发和测试"
+            )
         return self
+
+    @property
+    def sqlalchemy_url(self) -> str:
+        """SQLAlchemy 连接串：显式 DATABASE_URL 优先，否则用 db_path 的 SQLite。"""
+        if self.database_url:
+            return self.database_url
+        return str(URL.create("sqlite+pysqlite", database=str(self.db_path)))
 
     # 日志级别
     log_level: LogLevel = "INFO"

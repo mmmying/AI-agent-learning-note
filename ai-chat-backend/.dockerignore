@@ -1,0 +1,29 @@
+# 收窄构建上下文：只留运行需要的代码，本地开发产物和数据不进镜像。
+.git/
+.github/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.test-tmp/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+junit.xml
+
+# 密钥和真实数据绝不能进镜像：配置改用环境变量注入。
+.env
+.env.*
+!.env.example
+data/
+
+# 文档截图、测试与开发依赖与运行无关。
+images/
+README.md
+tests/
+requirements-dev.txt
+pytest.ini
+Dockerfile
+.dockerignore

@@ -1,0 +1,87 @@
+# 本地开发用的一整套服务：PostgreSQL 存业务数据，Redis 存认证限流计数，backend 是打包好的 FastAPI，
+# frontend 是编译好的静态页面 + nginx 反代。
+# 生产环境不依赖本文件，直接通过 DATABASE_URL / REDIS_URL 指向托管实例。
+# 端口只绑 127.0.0.1：这里的口令是本地默认值、Redis 又没开认证，不能暴露到局域网。
+#
+# 前后端都跑在容器里（首次要 build 两个镜像，之后打开 http://127.0.0.1:8080/）：
+#   docker compose up -d
+#
+# 或者只跑数据服务，前后端都在宿主机上开发（vite 的 /api 代理已指向 127.0.0.1:8000）：
+#   docker compose up -d postgres redis
+#   cd ai-chat-backend && DATABASE_URL="postgresql+psycopg://ai_chat:ai_chat@127.0.0.1:5432/ai_chat" uvicorn main:app --reload
+#   cd ai-chat-frontend && npm run dev
+# 注意 frontend 容器只认 compose 里的 backend:8000，不会代理宿主机上那个 uvicorn。
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ai_chat
+      POSTGRES_PASSWORD: ai_chat
+      POSTGRES_DB: ai_chat
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18 起官方镜像把数据放在 /var/lib/postgresql/<major>/docker，
+      # 挂载点必须是 /var/lib/postgresql；挂在 .../data 会被镜像当成旧版本遗留数据而拒绝启动。
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_chat -d ai_chat"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    # 限流窗口只有几十秒，不配置持久化，重启后计数从 0 开始。
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./ai-chat-backend
+      args:
+        # pypi.org 从容器里下得很慢就换源（清华源对容器内请求返回 403，用不了），
+        # 例如在仓库根 .env 里写 PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    image: ai-chat-backend:local
+    # AI 密钥等从 ai-chat-backend/.env 读取（已被 gitignore，不进镜像也不进仓库）；
+    # 文件不存在时跳过，此时 /chat 因为缺密钥不可用，其余接口照常。
+    env_file:
+      - path: ./ai-chat-backend/.env
+        required: false
+    environment:
+      # 覆盖 .env 里写给宿主机的地址：容器内要走 compose 网络的服务名。
+      DATABASE_URL: postgresql+psycopg://ai_chat:ai_chat@postgres:5432/ai_chat
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./ai-chat-frontend
+      args:
+        # 容器里访问 registry.npmjs.org 太慢就换源，例如在仓库根 .env 里写
+        # NPM_REGISTRY=https://registry.npmmirror.com
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+    image: ai-chat-frontend:local
+    # nginx 托管 dist，并把 /api 反代到 backend:8000，等价于 vite 的 dev proxy。
+    # 宿主机 5173 通常已被 vite dev server 占着，所以这里默认用 8080。
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

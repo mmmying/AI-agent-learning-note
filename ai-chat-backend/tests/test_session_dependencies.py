@@ -1,14 +1,15 @@
 import tempfile
 import unittest
-import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from api.chat import router as chat_router
+import fakeredis
+import pytest
 from api.auth import router as auth_router
+from api.chat import router as chat_router
 from api.conversations import router as conversations_router
 from db.database import Database
-from db.dependencies import get_database
+from db.dependencies import get_database, get_redis
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from services.memory_store import MemoryStore
@@ -22,21 +23,30 @@ class SessionDependencyTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.database = Database(Path(self.temp.name) / "test.db")
         self.database.init_tables()
+        self.redis = fakeredis.FakeRedis(decode_responses=True)
         app = FastAPI()
         app.include_router(chat_router)
         app.include_router(auth_router)
         app.include_router(conversations_router)
         # 当 FastAPI 需要调用 get_database() 时，改为调用这个 lambda，返回测试数据库
         app.dependency_overrides[get_database] = lambda: self.database
+        app.dependency_overrides[get_redis] = lambda: self.redis
         self.client = TestClient(app)
-        response = self.client.post("/auth/register", json={
-            "username": "session_user", "password": "test-password-123",
-        })
+        response = self.client.post(
+            "/auth/register",
+            json={
+                "username": "session_user",
+                "password": "test-password-123",
+            },
+        )
         self.user_id = response.json()["user"]["id"]
-        self.client.headers["Authorization"] = f"Bearer {response.json()['access_token']}"
+        self.client.headers["Authorization"] = (
+            f"Bearer {response.json()['access_token']}"
+        )
 
     def tearDown(self):
         self.client.close()
+        self.redis.close()
         self.database.engine.dispose()
         self.temp.cleanup()
 
@@ -62,7 +72,9 @@ class SessionDependencyTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.client.post("/chat/chat", json={"message": "hello"})
         with self.database.session() as session:
-            self.assertEqual(MemoryStore(session, self.user_id).list_conversations(), [])
+            self.assertEqual(
+                MemoryStore(session, self.user_id).list_conversations(), []
+            )
 
     def test_stream_keeps_session_until_completion(self):
         with patch("services.chat_service.AIClient") as client:
@@ -89,4 +101,6 @@ class SessionDependencyTests(unittest.TestCase):
             ):
                 self.client.post("/chat/chat", json={"message": "hello"})
         with self.database.session() as session:
-            self.assertEqual(MemoryStore(session, self.user_id).list_conversations(), [])
+            self.assertEqual(
+                MemoryStore(session, self.user_id).list_conversations(), []
+            )

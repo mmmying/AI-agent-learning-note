@@ -36,9 +36,9 @@ export async function authenticate(mode: "login" | "register", username: string,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
-  const data = await response.json();
+  const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(typeof data.detail === "string" ? data.detail : "请检查用户名和密码格式");
+    throw new Error(typeof data?.detail === "string" ? data.detail : `请求失败 (${response.status})`);
   }
   const auth = data as AuthResponse;
   sessionStorage.setItem(TOKEN_KEY, auth.access_token);

@@ -41,7 +41,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0003",
+                "0004",
             )
             context = MigrationContext.configure(connection)
             self.assertEqual(compare_metadata(context, Base.metadata), [])
@@ -50,6 +50,10 @@ class MigrationTests(unittest.TestCase):
                 text("SELECT sql FROM sqlite_master WHERE name = 'messages'")
             )
             self.assertIn("AUTOINCREMENT", sql)
+            # 限流计数已迁到 Redis，不再保留数据库表。
+            self.assertNotIn(
+                "auth_rate_limits", inspect(self.db.engine).get_table_names()
+            )
 
     def test_downgrade_and_reupgrade(self):
         init_db(self.db)
@@ -172,7 +176,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0003",
+                "0004",
             )
 
     def test_offline_sql_generation_does_not_create_database(self):
@@ -184,6 +188,7 @@ class MigrationTests(unittest.TestCase):
         self.assertFalse(self.db.path.exists())
         self.assertIn("CREATE TABLE conversations", output.getvalue())
         self.assertIn("CREATE TABLE messages", output.getvalue())
+        self.assertIn("DROP TABLE auth_rate_limits", output.getvalue())
 
     def test_autogenerate_creates_importable_revision_template(self):
         init_db(self.db)
@@ -196,6 +201,10 @@ class MigrationTests(unittest.TestCase):
             shutil.copy(BASE_DIR / "migrations/versions/0002_users.py", generated)
             shutil.copy(
                 BASE_DIR / "migrations/versions/0003_auth_rate_limits.py", generated
+            )
+            shutil.copy(
+                BASE_DIR / "migrations/versions/0004_drop_auth_rate_limits.py",
+                generated,
             )
             config.set_main_option("version_locations", generated)
             with self.db.engine.begin() as connection:

@@ -7,6 +7,10 @@ python -m venv .venv
 # 安装依赖
 python -m pip install -r requirements.txt
 
+# 可选：起一套本地 PostgreSQL、Redis 和打包好的后端（compose 文件在仓库根目录）
+# 首次会 build 后端镜像；只想让后端跑在宿主机上热重载，就改成 up -d postgres redis
+docker compose -f ../docker-compose.yml up -d
+
 # 执行数据库迁移（应用启动时也会自动执行）
 alembic upgrade head
 
@@ -14,13 +18,15 @@ alembic upgrade head
 uvicorn main:app --reload
 ```
 
+不配置 `DATABASE_URL` 时使用 `data/chat.db`（SQLite），仅适合本地开发和测试；生产用 PostgreSQL，认证限流计数始终放在 Redis，因此需要 `REDIS_URL` 可达。详见「生产数据库与共享状态」。
+
 访问 http://127.0.0.1:8000/
 ![1](./images/image1.png)
 ![2](./images/image2.png)
 
 ## 自动化测试
 
-测试使用 pytest，兼容原有 unittest 用例；使用 FastAPI TestClient 和临时 SQLite 数据库，无需启动服务或配置 AI 密钥。
+测试使用 pytest，兼容原有 unittest 用例；使用 FastAPI TestClient、临时 SQLite 数据库和 fakeredis，无需启动服务、拉起 PostgreSQL/Redis 或配置 AI 密钥。
 
 ```powershell
 # 安装运行和测试依赖（Python 3.11+）
@@ -38,9 +44,18 @@ python -m pytest --cov --cov-report=term-missing --cov-report=xml --junitxml=jun
 ./scripts/test.ps1 -Python ./.venv/Scripts/python.exe -Coverage
 ```
 
-`tests/conftest.py` 在导入应用前将 `DB_PATH` 指向临时目录，覆盖测试环境与 AI 密钥。`database` fixture 为每个用例分配独立数据库，并使用 Alembic 初始化。`client` fixture 执行真实的应用启动、迁移与关闭流程，AI 响应使用 mock，并阻止 HTTPX 发出真实网络请求。测试不会读写 `data/chat.db`，Engine 释放后清理临时文件。
+`tests/conftest.py` 在导入应用前将 `DB_PATH` 指向临时目录，覆盖测试环境与 AI 密钥。`database` fixture 为每个用例分配独立数据库，并使用 Alembic 初始化。`redis_client` fixture 用 fakeredis 提供内存中的限流计数，跨进程共享场景用同一个 `FakeServer` 模拟。`client` fixture 执行真实的应用启动、迁移与关闭流程，AI 响应使用 mock，并阻止 HTTPX 发出真实网络请求。测试不会读写 `data/chat.db`，Engine 释放后清理临时文件。
 
-测试覆盖普通/多轮聊天、请求校验、会话查询与删除、SSE 事件和落库、AI 异常、流式失败及提交失败回滚、SQLite 外键和非空约束、级联删除、Session 生命周期，以及新库/旧库迁移和结构一致性。`database` 标记包含数据库集成及接口落库测试。
+测试覆盖普通/多轮聊天、请求校验、会话查询与删除、SSE 事件和落库、AI 异常、流式失败及提交失败回滚、SQLite 外键和非空约束、级联删除、Session 生命周期，以及新库/旧库迁移和结构一致性。`database` 标记包含数据库集成及接口落库测试。限流用例覆盖固定窗口的建立与重置、`Retry-After`、429 不延长窗口、422 不计次、无 TTL 孤儿键修复和多进程并发只放行额度内的请求。
+
+PostgreSQL 方言测试默认跳过，需要一个真实测试库才执行；结构、外键、自增序列、时区和级联删除都在这一组里验证。这组用例会清空 `users`、`conversations`、`messages`，所以库名必须包含 `test`，指向别的库时用例直接失败而不是默默删数据：
+
+```powershell
+# 先 docker compose -f ../docker-compose.yml up -d postgres
+docker compose -f ../docker-compose.yml exec postgres createdb -U ai_chat ai_chat_test
+$env:TEST_DATABASE_URL = "postgresql+psycopg://ai_chat:ai_chat@127.0.0.1:5432/ai_chat_test"
+python -m pytest -m database tests/test_postgres_integration.py
+```
 
 测试失败时退出码非零；CI 可执行上述 pytest 报告命令。生成的报告和缓存已加入忽略规则。
 
@@ -60,6 +75,7 @@ backend/
 │     ai_client.py       ← 调用 OpenAI
 │     chat_service.py    ← 负责 AI 对话的业务流程，属于业务编排层
 |     memory_store.py    ← 负责对话历史的持久化存储和管理，属于数据持久化层
+│     auth_rate_limit.py ← 基于 Redis 固定窗口的注册/登录限流
 │
 ├── models/
 │     schemas.py         ← Pydantic 模型
@@ -67,12 +83,18 @@ backend/
 ├── db/
 │     orm_models.py      ← 数据库表定义
 │     database.py        ← 数据库连接、Session 工厂和迁移入口
+│     dialect.py         ← SQLite 与 PostgreSQL 的 SQL 方言差异
 │     migrations.py      ← 使用应用 Engine 执行 Alembic 升级
+│     redis_client.py    ← 共享状态（限流计数）的 Redis 连接
 │
 ├── alembic.ini          ← Alembic 配置
 ├── migrations/
 │     env.py             ← 迁移环境，复用应用配置和 ORM 元数据
 │     versions/          ← 可追踪的数据库版本历史
+│     script.py.mako     ← 生成迁移文件时使用的模板
+│
+├── scripts/
+│     import_sqlite_to_postgres.py ← 一次性把 SQLite 数据搬进 PostgreSQL
 │
 ├── core/
 │     config.py          ← Pydantic Settings 配置
@@ -149,7 +171,8 @@ Database          LLM Provider
 |Web 框架 |FastAPI 0.139 + Uvicorn |ASGI，自带 OpenAPI 文档 |
 |数据校验 |Pydantic v2 |请求/响应模型与类型契约 |
 |AI SDK |openai 2.44 |通过 base_url 复用同一 SDK 调 DeepSeek |
-|数据库 |SQLite + SQLAlchemy 2 ORM + Alembic |Session 管理事务，Alembic 管理表结构版本 |
+|数据库 |PostgreSQL 18（生产）/ SQLite（本地、测试）+ SQLAlchemy 2 ORM + Alembic |同一套模型和迁移，由 `DATABASE_URL` 决定方言 |
+|共享状态 |Redis 8 + redis 客户端 |认证限流计数，多进程和多实例共用 |
 |流式传输 |SSE（StreamingResponse） |text/event-stream + 生成器 |
 |配置 |python-dotenv |.env 注入密钥与开关 |
 
@@ -157,17 +180,93 @@ Database          LLM Provider
 
 数据库访问封装在 `MemoryStore`，`ChatService` 继续使用原有接口。`db/orm_models.py` 定义 ORM 模型，`db/database.py` 管理连接、Session 工厂和迁移入口。路由通过依赖注入获取请求级 Session，数据库层负责创建、异常回滚和关闭；业务层显式提交事务。普通聊天在返回前提交整轮对话，流式聊天在发送 done 前提交，删除会话在返回前提交；会话删除通过数据库外键级联删除消息。
 
-`db/database.py` 定义进程级共享的 `database` 实例及 Engine，FastAPI lifespan 将其注册到 `app.state.database`，退出时释放 Engine。启动时调用 `init_db(database)`，通过 Alembic 执行 `upgrade head`；版本记录存储在 `alembic_version` 表。迁移失败会阻止服务启动。应用不再调用 `create_all()`，修改模型后必须新增迁移文件并提交到版本控制。
+`db/database.py` 按 `settings.sqlalchemy_url` 创建 Engine：未配置 `DATABASE_URL` 时是 SQLite 文件，配置后是 PostgreSQL（连接池加 `pool_pre_ping` 探活）。`Database` 实例进程级共享，FastAPI lifespan 将其注册到 `app.state.database`，同时创建 Redis 客户端注册到 `app.state.redis`，退出时分别释放 Engine 和连接池。启动时调用 `init_db(database)`，通过 Alembic 执行 `upgrade head`；版本记录存储在 `alembic_version` 表。迁移失败会阻止服务启动。应用不再调用 `create_all()`，修改模型后必须新增迁移文件并提交到版本控制。
+
+SQLite 和 PostgreSQL 的 SQL 差异集中在 `db/dialect.py`：`ON CONFLICT DO NOTHING` 用各自的方言构造器，当前时间表达式在 SQLite 沿用 `datetime('now', 'localtime')`、在 PostgreSQL 用 `now()`（列类型 `timestamptz`）。业务层通过 `session.get_bind().dialect.name` 取方言名，不再直接 import 某个方言模块。
 
 - `system prompt` 放在 prompts/system.md，不要写死在代码里。
 - `多轮对话` 不应该由前端每次传一大堆历史，而是先由后端根据 conversation_id 管理。
-- `聊天记录保存` 用 SQLite / PostgreSQL。
+- `聊天记录保存` 用 PostgreSQL（生产）或 SQLite（本地开发和测试），由 `DATABASE_URL` 决定。
 - `流式输出` 先在后端用 FastAPI 的 StreamingResponse，前端再用 fetch 读取 stream
 - `React 前端` 只负责输入、展示、调用 /chat 或 /chat/stream，不要放 AI 逻辑。
 
+## 生产数据库与共享状态
+
+生产环境的运行状态分两处：业务数据（用户、会话、消息）在 PostgreSQL，跨进程的认证限流计数在 Redis。SQLite 只保留给本地开发和测试，同一套 ORM 模型和 Alembic 迁移覆盖两种方言。
+
+### 连接配置
+
+| 变量 | 作用 | 说明 |
+| --- | --- | --- |
+| `DATABASE_URL` | SQLAlchemy 连接串 | 留空时回落到 `DB_PATH` 指向的 SQLite；生产填 `postgresql+psycopg://user:password@host:5432/dbname` |
+| `DB_PATH` | SQLite 文件路径 | 仅 `DATABASE_URL` 为空时生效，默认 `data/chat.db` |
+| `REDIS_URL` | Redis 连接串 | 默认 `redis://127.0.0.1:6379/0`，认证限流计数依赖它，不可达时接口返回 500 |
+
+`APP_ENV=production` 时，`core/config.py` 会在应用启动前校验配置：`DATABASE_URL` 必须以 `postgresql` 开头，`JWT_SECRET_KEY` 必须显式配置，否则直接拒绝启动，避免生产误用 SQLite 单文件库或进程级随机密钥。
+
+本地开发用仓库根目录的 `docker-compose.yml` 起一整套：PostgreSQL 18、Redis 8、打包好的后端镜像，以及编译成静态文件后由 nginx 托管的前端镜像。数据放在命名卷 `postgres-data` 里，端口都只绑 `127.0.0.1`，局域网访问不到：
+
+```powershell
+docker compose -f ../docker-compose.yml up -d                 # 四个服务，页面在 http://127.0.0.1:8080/
+docker compose -f ../docker-compose.yml up -d postgres redis  # 只要数据服务，前后端都跑宿主机热重载
+docker compose -f ../docker-compose.yml down                  # 保留数据卷
+```
+
+前端不直接连后端端口：浏览器只请求同源的 `/api/...`，由前端容器里的 nginx 反代到 compose 网络内部的 `backend:8000`，所以后端可以不发布到宿主机（见 `ai-chat-frontend/nginx.conf`）。同源的缘故，后端不需要配 CORS。反代时 nginx 会写 `X-Forwarded-For`，但 uvicorn 默认不解析它，限流计数记的是前端容器的地址，所有浏览器共用一个限流桶；要让每个真实客户端各自计数就给 uvicorn 加 `--proxy-headers --forwarded-allow-ips="*"`，前提是它真的只站在可信代理后面，否则客户端可以自己伪造这个头绕过限流。
+
+后端容器用 compose 网络的服务名连数据库（`postgres:5432`、`redis:6379`），这两条在 compose 的 `environment` 里写死并覆盖 `.env`；AI 密钥仍从 `ai-chat-backend/.env` 读取（该文件被 gitignore，`.dockerignore` 也把它挡在镜像外），文件不存在时服务照样能起，只是 `/chat` 缺密钥不可用。
+
+`.env` 里没有 `JWT_SECRET_KEY` 时，后端每次启动随机生成一个，容器重启后旧 token 全部失效；要跨重启保持登录就在 `.env` 里固定一个（`APP_ENV=production` 下不显式配置会直接拒绝启动）。
+
+容器后端默认占宿主机 `127.0.0.1:8000`；这个端口已经被宿主机上的 uvicorn 占着时，用 `BACKEND_PORT` 换一个（PowerShell：`$env:BACKEND_PORT="8001"`），否则 `up -d backend` 会报 `ports are not available`。这个冲突只影响宿主机发布，前端容器走的 `backend:8000` 是 compose 内部地址，不受影响。`POSTGRES_PORT`、`REDIS_PORT`、`FRONTEND_PORT` 同理。`.env` 里的 `DEBUG=true` 会打开 SQLAlchemy 的 SQL echo，容器日志里全是每条 SQL，嫌吵就在 `.env` 里改成 `false`。
+
+后端跑在宿主机时，`.env` 参考 `.env.example`：
+
+```
+DATABASE_URL=postgresql+psycopg://ai_chat:ai_chat@127.0.0.1:5432/ai_chat
+REDIS_URL=redis://127.0.0.1:6379/0
+```
+
+compose 里的 `ai_chat` 账号和口令仅供本地，生产请通过托管实例的密钥注入。构建后端镜像时容器里连 pypi.org 很慢（实测约 12 KiB/s，会 read timeout），换阿里云源能到约 150 KiB/s：
+
+```powershell
+$env:PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple"
+docker compose -f ../docker-compose.yml build backend
+```
+
+清华源 `pypi.tuna.tsinghua.edu.cn` 对容器内请求返回 403，用不了；阿里云、中科大、腾讯云三个源实测可用。
+
+### 从 SQLite 搬迁已有数据
+
+`scripts/import_sqlite_to_postgres.py` 是一次性导入脚本，把现有 SQLite 运行库的用户、会话、消息搬进 PostgreSQL。先把目标库的连接串配好、停止服务并备份 SQLite 文件，再执行：
+
+```powershell
+python scripts/import_sqlite_to_postgres.py `
+  --sqlite-path data/chat.db `
+  --database-url "postgresql+psycopg://ai_chat:ai_chat@127.0.0.1:5432/ai_chat"
+```
+
+脚本的行为：
+
+- 只读 SQLite，不修改源文件，可以反复重试。
+- 导入前用应用自己的迁移把目标库升级到 head，保证结构一致。
+- 目标库非空时拒绝执行，确认要合并才加 `--force`；写入在单个事务里完成，任何约束错误整体回滚，不留部分数据。
+- 保留原始主键（会话 ID、消息自增 ID、用户 ID），导入后把 `messages.id` 的序列对齐到当前最大值，后续插入不会撞号。
+- 旧库的时间戳来自两种基准：`users.created_at` 由 Python 的 UTC 时间写入，会话和消息时间由 SQL 的 `datetime('now', 'localtime')` 写入，都是不带时区的朴素值。脚本按列选择解释基准，统一换算成带时区的 UTC 存入 `timestamptz` 列，并打印时间范围供人工核对是否整体偏移。
+- 完成后按主键顺序逐行比对源库和目标库，而不只是数行数。
+- 限流计数不迁移，切换后 Redis 从 0 重新累计。
+
+脚本适合个人聊天库这种规模（全表读进内存校验），不适合需要长时间在线的大表迁移。
+
+### Redis 存什么
+
+目前只存认证限流计数，键为 `auth:rate-limit:<register|login>:<规范化用户名>`，值是窗口内的请求次数，TTL 就是剩余窗口时间。固定窗口语义与之前一致：首次请求用 `SET NX EX` 建键并开启窗口，后续请求 `INCR`，超限返回 429 和 `Retry-After`，超限本身不延长窗口；进程崩溃留下的无 TTL 键会在下次请求补上过期时间。
+
+Redis 不可达时请求会抛连接错误，不会静默降级成不限流。客户端是惰性连接，启动时不探测 Redis，直到第一次注册或登录请求才暴露问题。计数不落数据库，因此重启服务不影响计数，重启 Redis（compose 默认关闭持久化）则计数清零。
+
 ## 数据库迁移
 
-以下命令在项目根目录、使用项目虚拟环境执行。CLI 和应用都从 `core.config.settings.db_path` 读取数据库路径，默认是 `data/chat.db`，可通过 `.env` 或环境变量 `DB_PATH` 覆盖；相对路径相对于当前工作目录。迁移目录通过 `alembic.ini` 的位置定位。
+以下命令在项目根目录、使用项目虚拟环境执行。CLI 和应用共用 `core.config.settings.sqlalchemy_url`：配置了 `DATABASE_URL` 时连 PostgreSQL，否则连 `DB_PATH` 指向的 SQLite，默认是 `data/chat.db`。SQLite 相对路径相对于当前工作目录。迁移目录通过 `alembic.ini` 的位置定位。
 
 ```powershell
 # 查看当前版本和迁移历史
@@ -191,9 +290,11 @@ python -m alembic downgrade -1
 
 如果数据库已经由旧版 `Base.metadata.create_all()` 建成，且确认字段、约束和索引与 `migrations/versions/0001_initial_schema.py` **完全一致**，备份后可用 `python -m alembic stamp 0001` 登记初始版本，再执行 `python -m alembic upgrade head` 和 `python -m alembic check`。`stamp` 只写版本号，不修改结构，不能用于跳过结构差异。
 
-迁移环境开启 `render_as_batch=True`，自动生成的 SQLite 字段变更使用 batch 模式。自动生成不能可靠识别重命名，必须人工检查；涉及被引用的父表重建时，还需安排外键和数据复制顺序。[Alembic SQLite batch 文档](https://alembic.sqlalchemy.org/en/latest/batch.html)
+迁移环境按连接串判断方言：只有 SQLite 开启 `render_as_batch=True`，自动生成的字段变更用 batch 模式重建表；PostgreSQL 直接生成 `ALTER TABLE`，不需要 batch。`0004` 把认证限流表 `auth_rate_limits` 删掉，计数改由 Redis 保存；回退到 `0003` 会重建空表，但已经丢失的历史计数无法恢复。自动生成不能可靠识别重命名，必须人工检查；涉及被引用的父表重建时，还需安排外键和数据复制顺序。[Alembic SQLite batch 文档](https://alembic.sqlalchemy.org/en/latest/batch.html)
 
-`downgrade base` 会删除会话和消息表。应用启动会重新升级到 head，因此回退数据库时应同时部署匹配版本的代码。
+时间列统一用 `DateTime(timezone=True)`：SQLite 仍存文本，PostgreSQL 是 `TIMESTAMP WITH TIME ZONE`，读写都带时区。SQLite 的时间默认值来自 SQL 的 `datetime('now', 'localtime')`，PostgreSQL 用 `now()`，两者都由 `db/dialect.py` 提供。新加字段建议留可空列或带 `server_default`，避免 PostgreSQL 对已有数据的表直接加非空约束失败。
+
+`downgrade base` 会删除用户、会话和消息表。应用启动会重新升级到 head，因此回退数据库时应同时部署匹配版本的代码。
 
 ## 调用 DeepSeek API
 
@@ -258,6 +359,6 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 注册和登录按规范化后的用户名独立限流：默认每 60 秒最多注册 3 次、登录 5 次，成功、用户名重复和密码错误均计入次数；参数校验失败的 422 请求不计入。窗口从该账号对应操作的首次请求开始，过期后重置；超限请求返回 429 和以秒为单位的 `Retry-After` 响应头，不延长窗口。不同账号、注册与登录之间互不占用额度，当前用户查询不受此限制。
 
-可在 `.env` 中调整 `AUTH_REGISTER_RATE_LIMIT`、`AUTH_REGISTER_RATE_WINDOW_SECONDS`、`AUTH_LOGIN_RATE_LIMIT`、`AUTH_LOGIN_RATE_WINDOW_SECONDS`，修改后重启服务。计数通过独立事务保存在 SQLite 的 `auth_rate_limits` 表，登录失败或注册失败不会回滚计数，重启和共享同一数据库文件的多个进程会沿用计数；过期记录会自动清理。迁移 `0003` 在启动时自动执行，不修改已有用户与会话。这里只按账号限流，不包含按 IP 限制。
+可在 `.env` 中调整 `AUTH_REGISTER_RATE_LIMIT`、`AUTH_REGISTER_RATE_WINDOW_SECONDS`、`AUTH_LOGIN_RATE_LIMIT`、`AUTH_LOGIN_RATE_WINDOW_SECONDS`，修改后重启服务。计数保存在 Redis 的 `auth:rate-limit:<action>:<用户名>` 键里，键的 TTL 就是窗口剩余时间：登录失败或注册失败不会回滚计数，多进程和多实例天然共用同一份额度，窗口结束后键自动过期，不需要清理任务。迁移 `0004` 在启动时删除原先存放计数的 `auth_rate_limits` 表，不修改已有用户与会话；Redis 重启后计数从 0 重新累计。这里只按账号限流，不包含按 IP 限制。
 
 用户名去除首尾空格并转为小写后，注册会先检查唯一性，已存在时返回 409 并跳过密码哈希；数据库唯一约束继续保护并发注册，只有用户名冲突映射为 409，其他数据库约束错误不再误报为用户名重复。

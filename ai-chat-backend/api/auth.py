@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from core.security import CurrentUserDep, create_access_token, dummy_hash, password_hash
-from db.dependencies import DatabaseDep, SessionDep
+from db.dependencies import RedisDep, SessionDep
 from db.orm_models import User
 from fastapi import APIRouter, HTTPException
 from models.schemas import AuthRequest, TokenResponse, UserResponse
@@ -20,8 +20,8 @@ def token_response(user: User) -> TokenResponse:
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
-def register(request: AuthRequest, session: SessionDep, database: DatabaseDep):
-    enforce_auth_rate_limit(database, request.username, "register")
+def register(request: AuthRequest, session: SessionDep, redis_client: RedisDep):
+    enforce_auth_rate_limit(redis_client, request.username, "register")
     if (
         session.scalar(select(User.id).where(User.username == request.username))
         is not None
@@ -48,8 +48,8 @@ def register(request: AuthRequest, session: SessionDep, database: DatabaseDep):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(request: AuthRequest, session: SessionDep, database: DatabaseDep):
-    enforce_auth_rate_limit(database, request.username, "login")
+def login(request: AuthRequest, session: SessionDep, redis_client: RedisDep):
+    enforce_auth_rate_limit(redis_client, request.username, "login")
     user = session.scalar(select(User).where(User.username == request.username))
     # verify() 验证密码是否正确
     valid = password_hash.verify(

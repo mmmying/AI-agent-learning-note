@@ -72,3 +72,12 @@ test("failed login does not store a token", async () => {
   await assert.rejects(authenticate("login", "alice", "bad-password"), /用户名或密码错误/);
   assert.equal(getToken(), null);
 });
+
+test("auth errors stay readable when the body is not JSON", async () => {
+  globalThis.fetch = async () =>
+    new Response("Internal Server Error", { status: 500, headers: { "content-type": "text/plain" } });
+  await assert.rejects(authenticate("login", "alice", "password-123"), /请求失败 \(500\)/);
+  globalThis.fetch = async () => Response.json({ detail: "认证服务暂时不可用" }, { status: 503 });
+  await assert.rejects(authenticate("login", "alice", "password-123"), /认证服务暂时不可用/);
+  assert.equal(getToken(), null);
+});

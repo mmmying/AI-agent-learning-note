@@ -1,0 +1,26 @@
+# 收窄构建上下文：宿主机装的依赖和产物绝不能进镜像。
+# node_modules 里是 Windows 版的 esbuild/rollup 原生二进制，Linux 容器直接跑不起来，
+# 依赖统一由镜像内的 npm ci 按 package-lock.json 重装。
+node_modules/
+dist/
+dist-ssr/
+
+.git/
+.github/
+.vscode/
+.idea/
+*.sw?
+.DS_Store
+
+*.log
+npm-debug.log*
+test-results/
+coverage/
+*.local
+
+# 文档、测试与 lint 配置和运行无关（nginx.conf 要留着，运行层直接 COPY）。
+README.md
+tests/
+.oxlintrc.json
+Dockerfile
+.dockerignore

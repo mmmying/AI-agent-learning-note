@@ -8,6 +8,7 @@ from api.index import router as index_router
 from core.config import settings
 from core.logger import setup_logging
 from db.database import database, init_db
+from db.redis_client import create_redis_client
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from openai import APIError, AuthenticationError, RateLimitError
@@ -19,10 +20,15 @@ setup_logging()
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 复用 db.database 中的共享实例，每次请求创建独立 Session。
     app.state.database = database
+    # Redis 客户端自带连接池，进程内共用一个实例即可。
+    redis_client = create_redis_client(settings.redis_url)
+    app.state.redis = redis_client
     try:
         init_db(database)
         yield
     finally:
+        redis_client.close()
+        del app.state.redis
         database.engine.dispose()
         del app.state.database
 

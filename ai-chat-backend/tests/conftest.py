@@ -99,10 +99,24 @@ def ai_client(monkeypatch):
 
 
 @pytest.fixture
-def app(database, monkeypatch):
+def redis_client():
+    """每个测试一套内存 Redis，限流计数不跨测试残留。"""
+    import fakeredis
+
+    client = fakeredis.FakeRedis(decode_responses=True)
+    try:
+        yield client
+    finally:
+        client.flushall()
+        client.close()
+
+
+@pytest.fixture
+def app(database, redis_client, monkeypatch):
     import main
 
     monkeypatch.setattr(main, "database", database)
+    monkeypatch.setattr(main, "create_redis_client", lambda url: redis_client)
     previous_overrides = main.app.dependency_overrides.copy()
     main.app.dependency_overrides.clear()
     try:

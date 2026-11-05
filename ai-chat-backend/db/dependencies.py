@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from typing import Annotated
 
+import redis
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
@@ -35,3 +36,12 @@ def get_db(database: DatabaseDep) -> Iterator[Session]:
 # 路由参数可以直接声明为 db: SessionDep。
 # request 作用域确保流式响应迭代结束后才关闭 Session。
 SessionDep = Annotated[Session, Depends(get_db, scope="request")]
+
+
+def get_redis(request: Request) -> redis.Redis:
+    """获取 lifespan 创建的共享 Redis 客户端，连接池在所有请求间复用。"""
+    return request.app.state.redis
+
+
+# 限流计数等共享状态走 RedisDep，不占用业务数据库连接。
+RedisDep = Annotated[redis.Redis, Depends(get_redis)]

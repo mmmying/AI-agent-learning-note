@@ -1,5 +1,6 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import { AUTH_EXPIRED_EVENT, authenticate, clearToken, fetchCurrentUser, getToken, type User } from "./api/auth";
+import { BrandMark } from "./Icons";
 
 export default function AuthGate({ children }: { children: (user: User, logout: () => void) => ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -52,7 +53,7 @@ export default function AuthGate({ children }: { children: (user: User, logout: 
   if (user) return children(user, logout);
   return <main className="auth-page">
     <form className="auth-card" onSubmit={submit}>
-      <h1>AI Chat</h1>
+      <h1><BrandMark size={26} /> AI Chat</h1>
       <p>{mode === "login" ? "登录，继续你的对话" : "创建账号，开启你的专属对话"}</p>
       <label htmlFor="username">用户名</label>
       <input id="username" value={username} onChange={(event) => setUsername(event.target.value)}

@@ -37,9 +37,17 @@ class ChatRequest(BaseModel):
     provider: Provider | None = None
 
 
+class TokenUsage(BaseModel):
+    # 单次调用或会话累计的 token 用量，缺省为 0（兼容未统计的历史数据）
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
 class ChatResponse(BaseModel):
     conversation_id: str
     reply: str
+    usage: TokenUsage = Field(default_factory=TokenUsage)
 
 
 class Message(BaseModel):
@@ -53,3 +61,4 @@ class ConversationSummary(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    usage: TokenUsage = Field(default_factory=TokenUsage)

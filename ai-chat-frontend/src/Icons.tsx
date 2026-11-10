@@ -111,3 +111,14 @@ export function SparkIcon(props: IconProps) {
     </StrokeIcon>
   );
 }
+
+/** token 用量标签：累计计数 */
+export function TokenIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <ellipse cx="8" cy="4.3" rx="5" ry="2.1" />
+      <path d="M3 4.3v3.4c0 1.16 2.24 2.1 5 2.1s5-.94 5-2.1V4.3" />
+      <path d="M3 7.7v3.4c0 1.16 2.24 2.1 5 2.1s5-.94 5-2.1V7.7" />
+    </StrokeIcon>
+  );
+}

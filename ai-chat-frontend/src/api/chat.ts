@@ -13,12 +13,20 @@ export type ApiMessage = {
   content: string;
 };
 
+/** token 用量，对应后端 TokenUsage */
+export type TokenUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+};
+
 /** 历史会话摘要，对应后端 /api/conversations 返回的每一项 */
 export type ConversationSummary = {
   id: string;
   title: string;
   created_at: string;
   updated_at: string;
+  usage: TokenUsage;
 };
 
 type SSEEventType = "start" | "delta" | "done";

@@ -89,11 +89,19 @@ def memory_store(db_session):
 
 @pytest.fixture
 def ai_client(monkeypatch):
+    from models.schemas import TokenUsage
     from services.ai_client import AIClient
 
+    usage = TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15)
     client = MagicMock(spec=AIClient)
-    client.chat.return_value = "测试回复"
-    client.chat_stream.side_effect = lambda **kwargs: iter(["测试", "回复"])
+    client.chat.return_value = ("测试回复", usage)
+
+    def fake_stream(**kwargs):
+        yield "测试"
+        yield "回复"
+        return usage
+
+    client.chat_stream.side_effect = fake_stream
     monkeypatch.setattr("services.chat_service.AIClient", lambda **kwargs: client)
     return client
 

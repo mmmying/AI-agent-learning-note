@@ -12,6 +12,7 @@ from db.database import Database
 from db.dependencies import get_database, get_redis
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from models.schemas import TokenUsage
 from services.memory_store import MemoryStore
 from sqlalchemy.orm import Session
 
@@ -52,7 +53,7 @@ class SessionDependencyTests(unittest.TestCase):
 
     def test_chat_persists_and_delete_commits(self):
         with patch("services.chat_service.AIClient") as client:
-            client.return_value.chat.return_value = "reply"
+            client.return_value.chat.return_value = ("reply", TokenUsage())
             response = self.client.post("/chat/chat", json={"message": "hello"})
         self.assertEqual(response.status_code, 200)
         conversation_id = response.json()["conversation_id"]
@@ -92,7 +93,7 @@ class SessionDependencyTests(unittest.TestCase):
 
     def test_commit_failure_rolls_back(self):
         with patch("services.chat_service.AIClient") as client:
-            client.return_value.chat.return_value = "reply"
+            client.return_value.chat.return_value = ("reply", TokenUsage())
             with (
                 patch.object(
                     Session, "commit", side_effect=RuntimeError("commit failed")

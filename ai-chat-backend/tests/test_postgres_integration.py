@@ -13,7 +13,7 @@ import os
 import pytest
 from db.database import Database
 from db.orm_models import Base, Conversation, MessageRecord
-from models.schemas import Message
+from models.schemas import Message, TokenUsage
 from services.memory_store import MemoryStore
 from sqlalchemy import func, inspect, select, text
 from sqlalchemy.engine import make_url
@@ -50,7 +50,7 @@ def pg_database():
 def test_migrations_record_head_and_drop_rate_limit_table(pg_database):
     with pg_database.engine.connect() as connection:
         assert (
-            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0004"
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0005"
         )
     tables = set(inspect(pg_database.engine).get_table_names())
     assert {"users", "conversations", "messages"} <= tables
@@ -113,3 +113,22 @@ def test_memory_store_round_trip(pg_database):
     with pg_database.session() as session:
         # 级联删除由数据库执行，消息随会话一并清除。
         assert session.scalar(select(func.count()).select_from(MessageRecord)) == 0
+
+
+def test_token_usage_accumulates(pg_database):
+    with pg_database.session() as session:
+        store = MemoryStore(session, user_id=None)
+        store.add_message("tokens", Message(role="user", content="第一句"))
+        store.add_token_usage(
+            "tokens", TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15)
+        )
+        store.add_token_usage(
+            "tokens", TokenUsage(input_tokens=20, output_tokens=7, total_tokens=27)
+        )
+        session.commit()
+
+    with pg_database.session() as session:
+        summary = MemoryStore(session).list_conversations()[0]
+        assert summary.usage.input_tokens == 30
+        assert summary.usage.output_tokens == 12
+        assert summary.usage.total_tokens == 42

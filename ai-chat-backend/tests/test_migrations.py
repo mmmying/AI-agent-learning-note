@@ -41,7 +41,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0004",
+                "0005",
             )
             context = MigrationContext.configure(connection)
             self.assertEqual(compare_metadata(context, Base.metadata), [])
@@ -176,7 +176,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0004",
+                "0005",
             )
 
     def test_offline_sql_generation_does_not_create_database(self):
@@ -204,6 +204,10 @@ class MigrationTests(unittest.TestCase):
             )
             shutil.copy(
                 BASE_DIR / "migrations/versions/0004_drop_auth_rate_limits.py",
+                generated,
+            )
+            shutil.copy(
+                BASE_DIR / "migrations/versions/0005_conversation_token_usage.py",
                 generated,
             )
             config.set_main_option("version_locations", generated)

@@ -44,6 +44,35 @@ def test_chat_passes_history_to_ai(client, ai_client):
     assert len(client.get("/conversations").json()) == 1
 
 
+def test_chat_response_includes_usage(client):
+    response = client.post("/chat/chat", json={"message": "你好"})
+    assert response.status_code == 200
+    assert response.json()["usage"] == {
+        "input_tokens": 10, "output_tokens": 5, "total_tokens": 15,
+    }
+
+
+def test_token_usage_accumulates_across_turns(client):
+    first = client.post("/chat/chat", json={"message": "第一问"}).json()
+    conversation_id = first["conversation_id"]
+    client.post("/chat/chat", json={"message": "第二问", "conversation_id": conversation_id})
+
+    summary = client.get("/conversations").json()[0]
+    # 每轮 mock 用量为 10/5/15，两轮累计翻倍。
+    assert summary["usage"] == {
+        "input_tokens": 20, "output_tokens": 10, "total_tokens": 30,
+    }
+
+
+def test_stream_accumulates_token_usage(client):
+    response = client.post("/chat/stream", json={"message": "你好"})
+    assert response.status_code == 200
+    summary = client.get("/conversations").json()[0]
+    assert summary["usage"] == {
+        "input_tokens": 10, "output_tokens": 5, "total_tokens": 15,
+    }
+
+
 @pytest.mark.parametrize("endpoint", ["/chat/chat", "/chat/stream"])
 @pytest.mark.parametrize("payload", [{}, {"message": ""}, {"message": None},
                                         {"message": "hello", "provider": "invalid"}])
@@ -95,7 +124,11 @@ def test_stream_events_and_persistence(client, database):
         {"type": "start", "conversation_id": conversation_id},
         {"type": "delta", "content": "测试"},
         {"type": "delta", "content": "回复"},
-        {"type": "done", "conversation_id": conversation_id},
+        {
+            "type": "done",
+            "conversation_id": conversation_id,
+            "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+        },
     ]
     with database.session() as session:
         assert [m.content for m in MemoryStore(session, client.user_id).get_messages(conversation_id)] == ["你好", "测试回复"]

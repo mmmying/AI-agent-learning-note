@@ -25,6 +25,7 @@ import {
   SearchIcon,
   SparkIcon,
   StopIcon,
+  TokenIcon,
 } from "./Icons";
 
 type ChatMessage = {
@@ -317,6 +318,12 @@ function ChatApp({ user, logout }: { user: User; logout: () => void }) {
 
   const isEmpty = messages.length === 0;
 
+  /** 当前会话的累计 token 用量，取自侧栏列表（每轮对话结束后会刷新） */
+  const activeUsage = useMemo(
+    () => conversations.find((item) => item.id === conversationId)?.usage ?? null,
+    [conversations, conversationId]
+  );
+
   return (
     <div className={`app${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
@@ -431,6 +438,16 @@ function ChatApp({ user, logout }: { user: User; logout: () => void }) {
             <SparkIcon size={13} />
             <span>{MODEL_NAME}</span>
           </span>
+
+          {activeUsage && (
+            <span
+              className="token-tag"
+              title={`输入 ${activeUsage.input_tokens.toLocaleString()} · 输出 ${activeUsage.output_tokens.toLocaleString()} tokens`}
+            >
+              <TokenIcon size={13} />
+              <span>本对话 {activeUsage.total_tokens.toLocaleString()} tokens</span>
+            </span>
+          )}
         </header>
 
         <main className="chat-panel" ref={chatPanelRef} onScroll={handleChatScroll}>

@@ -3,7 +3,7 @@ from uuid import uuid4
 from db.dialect import insert_statement, now_expression
 from db.orm_models import Conversation, MessageRecord
 from fastapi import HTTPException
-from models.schemas import ConversationSummary, Message
+from models.schemas import ConversationSummary, Message, TokenUsage
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -36,6 +36,11 @@ class MemoryStore:
                 title=row.title,
                 created_at=row.created_at,
                 updated_at=row.updated_at,
+                usage=TokenUsage(
+                    input_tokens=row.input_tokens,
+                    output_tokens=row.output_tokens,
+                    total_tokens=row.total_tokens,
+                ),
             )
             for row in conversations
         ]
@@ -117,3 +122,17 @@ class MemoryStore:
             .values(updated_at=now)
         )
         session.flush()
+
+    # 累加本轮 token 用量到会话累计值；与消息写入处于同一事务，由调用方提交。
+    def add_token_usage(self, conversation_id: str, usage: TokenUsage) -> None:
+        self.session.execute(
+            update(Conversation)
+            .where(
+                Conversation.id == conversation_id, Conversation.user_id == self.user_id
+            )
+            .values(
+                input_tokens=Conversation.input_tokens + usage.input_tokens,
+                output_tokens=Conversation.output_tokens + usage.output_tokens,
+                total_tokens=Conversation.total_tokens + usage.total_tokens,
+            )
+        )

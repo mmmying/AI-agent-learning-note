@@ -2,8 +2,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Generator
 from typing import Literal
 
-from models.schemas import Message
+from models.schemas import Message, TokenUsage
 from openai import OpenAI
+from openai.types.responses import ResponseUsage
 
 Provider = Literal[
     "openai",
@@ -18,7 +19,7 @@ class AIProviderStrategy(ABC):
         self,
         system_prompt: str,
         messages: list[Message],
-    ) -> str:
+    ) -> tuple[str, TokenUsage]:
         pass
 
     @abstractmethod
@@ -26,7 +27,7 @@ class AIProviderStrategy(ABC):
         self,
         system_prompt: str,
         messages: list[Message],
-    ) -> Generator[str, None, None]:
+    ) -> Generator[str, None, TokenUsage]:
         pass
 
 
@@ -71,7 +72,7 @@ class OpenAICompatibleStrategy(AIProviderStrategy):
         self,
         system_prompt: str,
         messages: list[Message],
-    ) -> str:
+    ) -> tuple[str, TokenUsage]:
         input_messages = self._build_input_messages(
             system_prompt,
             messages,
@@ -81,13 +82,13 @@ class OpenAICompatibleStrategy(AIProviderStrategy):
             **self._build_request_kwargs(input_messages),
         )
 
-        return response.output_text
+        return response.output_text, self._extract_usage(response.usage)
 
     def chat_stream(
         self,
         system_prompt: str,
         messages: list[Message],
-    ) -> Generator[str, None, None]:
+    ) -> Generator[str, None, TokenUsage]:
 
         input_messages = self._build_input_messages(
             system_prompt,
@@ -99,6 +100,21 @@ class OpenAICompatibleStrategy(AIProviderStrategy):
             stream=True,
         )
 
+        usage = TokenUsage()
         for event in stream:
             if event.type == "response.output_text.delta":
                 yield event.delta
+            elif event.type == "response.completed":
+                usage = self._extract_usage(event.response.usage)
+        return usage
+
+    @staticmethod
+    def _extract_usage(usage: ResponseUsage | None) -> TokenUsage:
+        # 上游未返回 usage（如响应中断）时按 0 计，避免统计阻塞回复。
+        if usage is None:
+            return TokenUsage()
+        return TokenUsage(
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            total_tokens=usage.total_tokens,
+        )

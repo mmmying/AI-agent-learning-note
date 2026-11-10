@@ -367,6 +367,19 @@ button:disabled {
   font-size: 12.5px;
 }
 
+.token-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: #eef1ff;
+  color: #4d6bfe;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
 .chat-panel {
   flex: 1;
   min-height: 0;

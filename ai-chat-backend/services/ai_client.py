@@ -1,7 +1,7 @@
 from collections.abc import Generator
 
 from core.config import settings
-from models.schemas import Message
+from models.schemas import Message, TokenUsage
 from services.factory import AIProviderFactory, Provider
 
 
@@ -22,7 +22,7 @@ class AIClient:
         self,
         system_prompt: str,
         messages: list[Message],
-    ) -> str:
+    ) -> tuple[str, TokenUsage]:
 
         return self.strategy.chat(
             system_prompt,
@@ -33,9 +33,10 @@ class AIClient:
         self,
         system_prompt: str,
         messages: list[Message],
-    ) -> Generator[str, None, None]:
+    ) -> Generator[str, None, TokenUsage]:
 
-        yield from self.strategy.chat_stream(
+        usage = yield from self.strategy.chat_stream(
             system_prompt,
             messages,
         )
+        return usage

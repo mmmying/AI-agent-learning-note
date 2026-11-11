@@ -65,6 +65,17 @@ export function SearchIcon(props: IconProps) {
   );
 }
 
+/** 联网搜索：地球 */
+export function GlobeIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <circle cx="8" cy="8" r="5.6" />
+      <path d="M2.4 8h11.2" />
+      <path d="M8 2.4c1.7 1.5 2.6 3.5 2.6 5.6S9.7 12.1 8 13.6C6.3 12.1 5.4 10.1 5.4 8S6.3 3.9 8 2.4Z" />
+    </StrokeIcon>
+  );
+}
+
 /** 退出登录 */
 export function LogoutIcon(props: IconProps) {
   return (
@@ -119,6 +130,24 @@ export function TokenIcon(props: IconProps) {
       <ellipse cx="8" cy="4.3" rx="5" ry="2.1" />
       <path d="M3 4.3v3.4c0 1.16 2.24 2.1 5 2.1s5-.94 5-2.1V4.3" />
       <path d="M3 7.7v3.4c0 1.16 2.24 2.1 5 2.1s5-.94 5-2.1V7.7" />
+    </StrokeIcon>
+  );
+}
+
+/** 关闭浮层 */
+export function CloseIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </StrokeIcon>
+  );
+}
+
+/** 展开指示：右箭头 */
+export function ChevronRightIcon(props: IconProps) {
+  return (
+    <StrokeIcon {...props}>
+      <path d="M6 3.5 10.5 8 6 12.5" />
     </StrokeIcon>
   );
 }

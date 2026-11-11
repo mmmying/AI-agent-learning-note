@@ -50,7 +50,7 @@ def pg_database():
 def test_migrations_record_head_and_drop_rate_limit_table(pg_database):
     with pg_database.engine.connect() as connection:
         assert (
-            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0005"
+            connection.scalar(text("SELECT version_num FROM alembic_version")) == "0006"
         )
     tables = set(inspect(pg_database.engine).get_table_names())
     assert {"users", "conversations", "messages"} <= tables

@@ -107,6 +107,22 @@ def ai_client(monkeypatch):
 
 
 @pytest.fixture
+def web_search(monkeypatch):
+    """ mock 掉 ChatService 里的搜索服务，默认返回两条结果。"""
+    from models.schemas import SearchResult
+    from services.web_search import WebSearchService
+
+    service = MagicMock(spec=WebSearchService)
+    service.max_results = 5
+    service.search.return_value = [
+        SearchResult(title="FastAPI 官方文档", url="https://fastapi.tiangolo.com/", snippet="现代 Web 框架"),
+        SearchResult(title="FastAPI 教程", url="https://www.runoob.com/fastapi/", snippet="入门教程"),
+    ]
+    monkeypatch.setattr("services.chat_service.WebSearchService", lambda *a, **k: service)
+    return service
+
+
+@pytest.fixture
 def redis_client():
     """每个测试一套内存 Redis，限流计数不跨测试残留。"""
     import fakeredis

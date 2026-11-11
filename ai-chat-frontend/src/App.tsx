@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import {
   type ConversationSummary,
   type Role,
+  type SearchResult,
   deleteConversation,
   fetchConversationMessages,
   fetchConversations,
@@ -18,7 +19,10 @@ import type { User } from "./api/auth";
 import {
   ArrowUpIcon,
   BrandMark,
+  ChevronRightIcon,
+  CloseIcon,
   EditIcon,
+  GlobeIcon,
   LockIcon,
   LogoutIcon,
   PanelLeftIcon,
@@ -28,11 +32,21 @@ import {
   TokenIcon,
 } from "./Icons";
 
+type SearchState = "searching" | "done" | "error";
+
 type ChatMessage = {
   id: string;
   role: Role;
   content: string;
+  /** 联网搜索状态，未开启搜索时为 undefined */
+  searchState?: SearchState;
+  sources?: SearchResult[];
+  searchError?: string;
+  /** 后端实际使用的聚焦搜索词 */
+  searchQuery?: string;
 };
+
+const WEB_SEARCH_STORAGE_KEY = "ai-chat:web-search";
 
 /** 后端 core/config.py 里的默认模型；后端没有模型列表接口，这里只做展示，不可切换 */
 const MODEL_NAME = "deepseek-v4-flash";
@@ -84,6 +98,156 @@ function createMessage(role: Role, content: string): ChatMessage {
   };
 }
 
+/** 从 URL 提取去 www 的域名，失败时退回原串 */
+function domainOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+function originOf(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+}
+
+/** 域名哈希到一组饱和色，让无图标时的字母头像也彼此可区分 */
+const FAVICON_HUES = ["#4d6bfe", "#0ea5e9", "#16a34a", "#f59e0b", "#d946ef", "#ef4444", "#8b5cf6", "#14b8a6"];
+function hueFor(domain: string): string {
+  let hash = 0;
+  for (const ch of domain) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return FAVICON_HUES[hash % FAVICON_HUES.length];
+}
+
+/** 站点图标：优先加载真实 favicon，失败时降级为域名首字母彩色头像 */
+function Favicon({ url, size = 18 }: { url: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const domain = domainOf(url);
+  const origin = originOf(url);
+  const style = { width: size, height: size, fontSize: Math.round(size * 0.52) };
+  if (failed || !origin) {
+    return (
+      <span className="favicon favicon-fallback" style={{ ...style, background: hueFor(domain) }} aria-hidden="true">
+        {domain.charAt(0).toUpperCase()}
+      </span>
+    );
+  }
+  return (
+    <img
+      className="favicon"
+      style={style}
+      src={`${origin}/favicon.ico`}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+/** 回答末尾的收起态来源入口：重叠站点图标 + 网页数，点击展开右侧抽屉 */
+function SourcesPill({
+  sources,
+  query,
+  onOpen,
+}: {
+  sources: SearchResult[];
+  query?: string;
+  onOpen: () => void;
+}) {
+  const seen = new Set<string>();
+  const stack: SearchResult[] = [];
+  for (const source of sources) {
+    const domain = domainOf(source.url);
+    if (!seen.has(domain)) {
+      seen.add(domain);
+      stack.push(source);
+    }
+    if (stack.length >= 4) break;
+  }
+  return (
+    <div className="sources-pill-row">
+      <button
+        type="button"
+        className="sources-pill"
+        onClick={onOpen}
+        aria-haspopup="dialog"
+        title={query ? `搜索词：${query}` : "查看参考来源"}
+      >
+        <span className="favicon-stack" aria-hidden="true">
+          {stack.map((source) => (
+            <Favicon key={source.url} url={source.url} size={18} />
+          ))}
+        </span>
+        <span className="sources-pill-count">{sources.length} 个网页</span>
+        <ChevronRightIcon size={12} className="sources-pill-chevron" />
+      </button>
+    </div>
+  );
+}
+
+/** 右侧「搜索结果」抽屉：逐条展示来源的站点、标题与摘要，点击在新标签页打开 */
+function SourcesDrawer({
+  sources,
+  query,
+  onClose,
+}: {
+  sources: SearchResult[];
+  query?: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="sources-drawer-root" role="dialog" aria-modal="true" aria-label="搜索结果">
+      <div className="sources-scrim" onClick={onClose} />
+      <aside className="sources-drawer">
+        <header className="sources-drawer-head">
+          <div className="sources-drawer-titles">
+            <h3>搜索结果</h3>
+            {query && (
+              <p className="sources-drawer-query" title={query}>
+                搜索词：{query}
+              </p>
+            )}
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭搜索结果">
+            <CloseIcon />
+          </button>
+        </header>
+        <div className="sources-drawer-body">
+          {sources.map((source, index) => (
+            <a
+              key={source.url}
+              className="source-card"
+              href={source.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <div className="source-card-meta">
+                <Favicon url={source.url} size={18} />
+                <span className="source-card-domain">{domainOf(source.url)}</span>
+                <span className="source-card-index">{index + 1}</span>
+              </div>
+              <h4 className="source-card-title">{source.title}</h4>
+              {source.snippet && <p className="source-card-snippet">{source.snippet}</p>}
+            </a>
+          ))}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 export default function App() {
   return <AuthGate>{(user, logout) => <ChatApp key={user.id} user={user} logout={logout} />}</AuthGate>;
 }
@@ -103,6 +267,27 @@ function ChatApp({ user, logout }: { user: User; logout: () => void }) {
   const [pendingDelete, setPendingDelete] = useState<ConversationSummary | null>(
     null
   );
+  /** 右侧「搜索结果」抽屉展示的来源；为 null 时收起 */
+  const [openSources, setOpenSources] = useState<{
+    sources: SearchResult[];
+    query?: string;
+  } | null>(null);
+  /** 联网搜索开关，偏好持久化到 localStorage，默认关闭 */
+  const [webSearch, setWebSearch] = useState(() => {
+    try {
+      return localStorage.getItem(WEB_SEARCH_STORAGE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WEB_SEARCH_STORAGE_KEY, webSearch ? "1" : "0");
+    } catch {
+      // 隐私模式等场景下写入失败不影响使用
+    }
+  }, [webSearch]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   useEffect(() => () => { abortControllerRef.current?.abort(); }, []);
@@ -188,13 +373,21 @@ function ChatApp({ user, logout }: { user: User; logout: () => void }) {
     }
 
     setError(null);
+    setOpenSources(null);
     setConversationId(id);
     // 切换会话后总是定位到最新消息
     isPinnedToBottomRef.current = true;
 
     try {
       const data = await fetchConversationMessages(id);
-      setMessages(data.map((item) => createMessage(item.role, item.content)));
+      setMessages(
+        data.map((item) => ({
+          ...createMessage(item.role, item.content),
+          sources: item.sources ?? [],
+          searchQuery: item.search_query ?? undefined,
+          searchState: item.sources && item.sources.length > 0 ? "done" : undefined,
+        }))
+      );
     } catch (err) {
       setMessages([]);
       setError(err instanceof Error ? err.message : "加载会话消息失败");
@@ -236,6 +429,7 @@ function ChatApp({ user, logout }: { user: User; logout: () => void }) {
     setMessages([]);
     setConversationId(null);
     setError(null);
+    setOpenSources(null);
     isPinnedToBottomRef.current = true;
     textareaRef.current?.focus();
   }, [stopStreaming]);
@@ -276,13 +470,32 @@ function ChatApp({ user, logout }: { user: User; logout: () => void }) {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
+    /** 只更新当前这条助手消息的搜索相关字段 */
+    const patchAssistant = (patch: Partial<ChatMessage>) => {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === assistantMessage.id ? { ...message, ...patch } : message
+        )
+      );
+    };
+
     try {
       await streamChat({
         conversationId,
         message: content,
+        webSearch,
         signal: abortController.signal,
         onStart: (id) => {
           setConversationId(id);
+        },
+        onSearchStart: (query) => {
+          patchAssistant({ searchState: "searching", searchQuery: query });
+        },
+        onSearchResult: (sources, query) => {
+          patchAssistant({ searchState: "done", sources, searchQuery: query });
+        },
+        onSearchError: (message) => {
+          patchAssistant({ searchState: "error", searchError: message });
         },
         onDelta: (delta) => {
           setMessages((prev) =>
@@ -471,18 +684,53 @@ function ChatApp({ user, logout }: { user: User; logout: () => void }) {
                 >
                   <div className="message-bubble">
                     {message.role === "assistant" ? (
-                      message.content ? (
-                        <div className="markdown-body">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={markdownComponents}
-                          >
-                            {message.content}
-                          </ReactMarkdown>
-                        </div>
-                      ) : (
-                        <span className="thinking">正在思考…</span>
-                      )
+                      <>
+                        {message.searchState === "searching" && (
+                          <div className="search-status">
+                            <span className="search-spinner" aria-hidden="true" />
+                            <span>正在联网搜索…</span>
+                            {message.searchQuery && (
+                              <span className="search-query" title={message.searchQuery}>
+                                {message.searchQuery}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {message.searchState === "error" && (
+                          <div className="search-warning" role="status">
+                            <GlobeIcon size={13} />
+                            <span>{message.searchError}，已按普通模式回答</span>
+                          </div>
+                        )}
+                        {message.content ? (
+                          <div className="markdown-body">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={markdownComponents}
+                            >
+                              {message.content}
+                            </ReactMarkdown>
+                          </div>
+                        ) : (
+                          message.searchState !== "searching" && (
+                            <span className="thinking">正在思考…</span>
+                          )
+                        )}
+                        {message.searchState === "done" &&
+                          message.sources &&
+                          message.sources.length > 0 && (
+                            <SourcesPill
+                              sources={message.sources}
+                              query={message.searchQuery}
+                              onOpen={() =>
+                                setOpenSources({
+                                  sources: message.sources!,
+                                  query: message.searchQuery,
+                                })
+                              }
+                            />
+                          )}
+                      </>
                     ) : (
                       <div className="message-content">{message.content}</div>
                     )}
@@ -514,10 +762,24 @@ function ChatApp({ user, logout }: { user: User; logout: () => void }) {
             />
 
             <div className="composer-bar">
-              <span className="composer-hint">
-                <LockIcon size={13} />
-                <span>对话保存在你的账号下</span>
-              </span>
+              <div className="composer-tools">
+                <button
+                  type="button"
+                  className={`search-toggle${webSearch ? " on" : ""}`}
+                  aria-pressed={webSearch}
+                  title={webSearch ? "联网搜索已开启，点击关闭" : "开启后回答会参考实时网页搜索结果"}
+                  onClick={() => setWebSearch((value) => !value)}
+                >
+                  <GlobeIcon size={14} />
+                  <span>联网搜索</span>
+                  <span className="search-toggle-dot" aria-hidden="true" />
+                </button>
+
+                <span className="composer-hint">
+                  <LockIcon size={13} />
+                  <span>对话保存在你的账号下</span>
+                </span>
+              </div>
 
               {isStreaming ? (
                 <button
@@ -558,6 +820,14 @@ function ChatApp({ user, logout }: { user: User; logout: () => void }) {
       >
         确定删除会话「{pendingDelete?.title || "未命名会话"}」吗？删除后不可恢复。
       </Modal>
+
+      {openSources && (
+        <SourcesDrawer
+          sources={openSources.sources}
+          query={openSources.query}
+          onClose={() => setOpenSources(null)}
+        />
+      )}
     </div>
   );
 }

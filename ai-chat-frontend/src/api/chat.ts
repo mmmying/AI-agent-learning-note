@@ -11,6 +11,16 @@ export type Role = "user" | "assistant";
 export type ApiMessage = {
   role: Role;
   content: string;
+  /** 联网搜索来源，随助手消息落库，历史会话回放时返回 */
+  sources?: SearchResult[];
+  search_query?: string | null;
+};
+
+/** 一条联网搜索结果，对应后端 SearchResult */
+export type SearchResult = {
+  title: string;
+  url: string;
+  snippet: string;
 };
 
 /** token 用量，对应后端 TokenUsage */
@@ -29,18 +39,29 @@ export type ConversationSummary = {
   usage: TokenUsage;
 };
 
-type SSEEventType = "start" | "delta" | "done";
+type SSEEventType =
+  | "start"
+  | "delta"
+  | "done"
+  | "search_start"
+  | "search_result"
+  | "search_error";
 
 type SSEEventData = {
   type: SSEEventType;
   conversation_id?: string;
   content?: string;
+  query?: string;
+  results?: SearchResult[];
+  message?: string;
 };
 
 /** 流式聊天的参数：请求内容 + 各类事件的回调 */
 export type StreamChatParams = {
   conversationId: string | null;
   message: string;
+  /** 是否开启联网搜索，默认关闭 */
+  webSearch?: boolean;
   signal?: AbortSignal;
   /** 收到会话 ID 时触发（新会话时后端会先返回 ID） */
   onStart?: (conversationId: string) => void;
@@ -48,6 +69,12 @@ export type StreamChatParams = {
   onDelta?: (delta: string) => void;
   /** 回复全部结束时触发 */
   onDone?: () => void;
+  /** 开始联网搜索时触发 */
+  onSearchStart?: (query: string) => void;
+  /** 拿到搜索结果时触发 */
+  onSearchResult?: (results: SearchResult[], query: string) => void;
+  /** 联网搜索失败（后端会降级为普通回复）时触发 */
+  onSearchError?: (message: string) => void;
 };
 
 /**
@@ -123,10 +150,14 @@ export async function deleteConversation(conversationId: string): Promise<void> 
 export async function streamChat({
   conversationId,
   message,
+  webSearch = false,
   signal,
   onStart,
   onDelta,
   onDone,
+  onSearchStart,
+  onSearchResult,
+  onSearchError,
 }: StreamChatParams): Promise<void> {
   const response = await apiFetch("/chat/stream", {
     method: "POST",
@@ -136,6 +167,7 @@ export async function streamChat({
     body: JSON.stringify({
       conversation_id: conversationId,
       message,
+      web_search: webSearch,
     }),
     signal,
   });
@@ -189,6 +221,21 @@ export async function streamChat({
 
         case "done": {
           onDone?.();
+          break;
+        }
+
+        case "search_start": {
+          onSearchStart?.(data.query ?? "");
+          break;
+        }
+
+        case "search_result": {
+          onSearchResult?.(data.results ?? [], data.query ?? "");
+          break;
+        }
+
+        case "search_error": {
+          onSearchError?.(data.message ?? "联网搜索失败");
           break;
         }
       }

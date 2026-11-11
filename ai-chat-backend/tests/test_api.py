@@ -93,8 +93,8 @@ def test_conversation_list_messages_and_delete(client, database):
     messages = client.get(f"/conversations/{conversation_id}/messages")
     assert messages.status_code == 200
     assert messages.json() == [
-        {"role": "user", "content": "你好"},
-        {"role": "assistant", "content": "测试回复"},
+        {"role": "user", "content": "你好", "sources": [], "search_query": None},
+        {"role": "assistant", "content": "测试回复", "sources": [], "search_query": None},
     ]
     deleted = client.delete(f"/conversations/{conversation_id}")
     assert deleted.status_code == 204

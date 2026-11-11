@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     deepseek_thinking: Literal["enabled", "disabled"] = "disabled"
     deepseek_reasoning_effort: Literal["minimal", "low", "medium", "high"] = "high"
 
+    # 联网搜索：auto 表示配置了 TAVILY_API_KEY 就用 Tavily，否则退回免密钥的 Bing 网页搜索
+    search_provider: Literal["auto", "tavily", "bing"] = "auto"
+    tavily_api_key: str = ""
+    search_max_results: int = Field(default=5, ge=1, le=10)
+    search_timeout: int = Field(default=10, ge=1, le=60)
+    # 搜索默认直连（不走环境变量/系统代理）：实测某些系统代理会给 Bing 返回缓存的无关结果。
+    # 若所在网络必须经代理才能出网，设为 true。
+    search_trust_env: bool = False
+
     db_path: Path = DB_PATH
     # 生产用 PostgreSQL 连接串（如 postgresql+psycopg://user:pwd@host:5432/db），
     # 留空则退回 db_path 上的 SQLite，仅用于本地开发和测试。
@@ -82,6 +91,7 @@ class Settings(BaseSettings):
         "ai_provider",
         "deepseek_thinking",
         "deepseek_reasoning_effort",
+        "search_provider",
         mode="before",
     )
     @classmethod

@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -77,6 +77,9 @@ class MessageRecord(Base):
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # 联网搜索的来源与搜索词，仅开启搜索的助手消息写入；历史消息为 NULL。
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    search_query: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,

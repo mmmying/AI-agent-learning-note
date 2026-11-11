@@ -31,10 +31,18 @@ class TokenResponse(BaseModel):
     user: UserResponse
 
 
+class SearchResult(BaseModel):
+    # 一条联网搜索结果，url 已是解码后的真实地址
+    title: str
+    url: str
+    snippet: str = ""
+
+
 class ChatRequest(BaseModel):
     conversation_id: str | None = None
     message: str = Field(..., min_length=1)
     provider: Provider | None = None
+    web_search: bool = False
 
 
 class TokenUsage(BaseModel):
@@ -48,11 +56,15 @@ class ChatResponse(BaseModel):
     conversation_id: str
     reply: str
     usage: TokenUsage = Field(default_factory=TokenUsage)
+    sources: list[SearchResult] = Field(default_factory=list)
 
 
 class Message(BaseModel):
     role: Role
     content: str
+    # 联网搜索来源与搜索词，随助手消息落库，供历史会话回放；普通消息为空。
+    sources: list[SearchResult] = Field(default_factory=list)
+    search_query: str | None = None
 
 
 class ConversationSummary(BaseModel):

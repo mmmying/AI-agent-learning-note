@@ -84,7 +84,15 @@ class MemoryStore:
             )
             .order_by(MessageRecord.id)
         )
-        return [Message(role=row.role, content=row.content) for row in records]
+        return [
+            Message(
+                role=row.role,
+                content=row.content,
+                sources=row.sources or [],
+                search_query=row.search_query,
+            )
+            for row in records
+        ]
 
     # 向指定对话中添加对话消息
     # 完成了三个关联操作：确保会话存在 → 写入消息 → 更新时间
@@ -111,6 +119,8 @@ class MemoryStore:
                 conversation_id=conversation_id,
                 role=message.role,
                 content=message.content,
+                sources=[source.model_dump() for source in message.sources] or None,
+                search_query=message.search_query,
                 created_at=now,
             )
         )

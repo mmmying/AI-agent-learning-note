@@ -94,6 +94,37 @@ class MemoryStore:
             for row in records
         ]
 
+    def get_context(self, conversation_id: str) -> tuple[str, list[MessageRecord]]:
+        context = self.session.execute(
+            select(Conversation.context_summary, Conversation.summary_through_id).where(
+                Conversation.id == conversation_id, Conversation.user_id == self.user_id
+            )
+        ).one_or_none()
+        if context is None:
+            raise HTTPException(status_code=404, detail="会话不存在")
+        summary, through_id = context
+        records = self.session.scalars(
+            select(MessageRecord)
+            .where(
+                MessageRecord.conversation_id == conversation_id,
+                MessageRecord.id > through_id,
+            )
+            .order_by(MessageRecord.id)
+        ).all()
+        return summary, list(records)
+
+    # 摘要与覆盖游标原子更新，和消息共用调用方的事务。
+    def save_context_summary(
+        self, conversation_id: str, summary: str, through_id: int
+    ) -> None:
+        self.session.execute(
+            update(Conversation)
+            .where(
+                Conversation.id == conversation_id, Conversation.user_id == self.user_id
+            )
+            .values(context_summary=summary, summary_through_id=through_id)
+        )
+
     # 向指定对话中添加对话消息
     # 完成了三个关联操作：确保会话存在 → 写入消息 → 更新时间
     def add_message(self, conversation_id: str, message: Message) -> None:
@@ -112,8 +143,16 @@ class MemoryStore:
             )
             .on_conflict_do_nothing(index_elements=[Conversation.id])
         )
-        # 即使 ID 冲突，也绝不向其他用户或未分配的会话写入消息。
-        self.require_conversation(conversation_id)
+        # 插入前锁定会话以保持消息与摘要游标顺序；SQLite 依靠 upsert 的写锁。
+        locked_id = session.scalar(
+            select(Conversation.id)
+            .where(
+                Conversation.id == conversation_id, Conversation.user_id == self.user_id
+            )
+            .with_for_update()
+        )
+        if locked_id is None:
+            raise HTTPException(status_code=404, detail="会话不存在")
         session.add(
             MessageRecord(
                 conversation_id=conversation_id,

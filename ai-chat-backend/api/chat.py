@@ -14,6 +14,7 @@ router = APIRouter(
 def chat(request: ChatRequest, chat_service: ChatServiceDep) -> ChatResponse:
     if request.conversation_id is not None:
         chat_service.memory_store.require_conversation(request.conversation_id)
+    chat_service.validate_message(request.message)
     return chat_service.chat(request)
 
 
@@ -21,6 +22,7 @@ def chat(request: ChatRequest, chat_service: ChatServiceDep) -> ChatResponse:
 def chat_stream(request: ChatRequest, chat_service: ChatServiceDep) -> StreamingResponse:
     if request.conversation_id is not None:
         chat_service.memory_store.require_conversation(request.conversation_id)
+    chat_service.validate_message(request.message)
     # 流式对话接口，以 SSE（text/event-stream）逐段返回回复
     return StreamingResponse(
         chat_service.chat_stream(request),

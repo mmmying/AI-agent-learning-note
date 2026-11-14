@@ -41,7 +41,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0006",
+                "0007",
             )
             context = MigrationContext.configure(connection)
             self.assertEqual(compare_metadata(context, Base.metadata), [])
@@ -61,6 +61,56 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(inspect(self.db.engine).get_table_names(), ["alembic_version"])
         init_db(self.db)
         self.assertIn("messages", inspect(self.db.engine).get_table_names())
+
+    def test_context_summary_migration_preserves_history_and_defaults(self):
+        self.run_command(command.upgrade, "0006")
+        with self.db.engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO conversations (id, title, created_at, updated_at) "
+                "VALUES ('old', '旧会话', '2020-01-01', '2020-01-01')"
+            ))
+            connection.execute(text(
+                "INSERT INTO messages (id, conversation_id, role, content, created_at) "
+                "VALUES (42, 'old', 'user', '完整历史', '2020-01-01')"
+            ))
+        init_db(self.db)
+        with self.db.engine.begin() as connection:
+            self.assertEqual(tuple(connection.execute(text(
+                "SELECT context_summary, summary_through_id FROM conversations WHERE id = 'old'"
+            )).one()), ("", 0))
+            # 原生 SQL 不提供新列，验证服务端默认值而非 ORM 默认值。
+            connection.execute(text(
+                "INSERT INTO conversations (id, title, created_at, updated_at) "
+                "VALUES ('new', '新会话', '2020-01-01', '2020-01-01')"
+            ))
+            self.assertEqual(tuple(connection.execute(text(
+                "SELECT context_summary, summary_through_id FROM conversations WHERE id = 'new'"
+            )).one()), ("", 0))
+            connection.execute(text(
+                "UPDATE conversations SET context_summary = '摘要', summary_through_id = 42 "
+                "WHERE id = 'old'"
+            ))
+            columns = {c["name"]: c for c in inspect(connection).get_columns("conversations")}
+            self.assertFalse(columns["context_summary"]["nullable"])
+            self.assertFalse(columns["summary_through_id"]["nullable"])
+            self.assertFalse(any(
+                "summary_through_id" in fk["constrained_columns"]
+                for fk in inspect(connection).get_foreign_keys("conversations")
+            ))
+        self.run_command(command.downgrade, "0006")
+        with self.db.engine.connect() as connection:
+            columns = {c["name"] for c in inspect(connection).get_columns("conversations")}
+            self.assertNotIn("context_summary", columns)
+            self.assertNotIn("summary_through_id", columns)
+            self.assertEqual(tuple(connection.execute(text(
+                "SELECT id, content FROM messages"
+            )).one()), (42, "完整历史"))
+        init_db(self.db)
+        with self.db.engine.connect() as connection:
+            self.assertEqual(tuple(connection.execute(text(
+                "SELECT context_summary, summary_through_id FROM conversations WHERE id = 'old'"
+            )).one()), ("", 0))
+            self.assertEqual(connection.scalar(text("SELECT content FROM messages")), "完整历史")
 
     def test_stamp_adopts_existing_orm_database_without_losing_data(self):
         # 使用冻结的初始迁移模拟旧 ORM 表结构（当前 Base 已含用户字段）。
@@ -176,7 +226,7 @@ class MigrationTests(unittest.TestCase):
         with self.db.engine.connect() as connection:
             self.assertEqual(
                 connection.scalar(text("SELECT version_num FROM alembic_version")),
-                "0006",
+                "0007",
             )
 
     def test_offline_sql_generation_does_not_create_database(self):
@@ -212,6 +262,10 @@ class MigrationTests(unittest.TestCase):
             )
             shutil.copy(
                 BASE_DIR / "migrations/versions/0006_message_search_sources.py",
+                generated,
+            )
+            shutil.copy(
+                BASE_DIR / "migrations/versions/0007_conversation_context_summary.py",
                 generated,
             )
             config.set_main_option("version_locations", generated)

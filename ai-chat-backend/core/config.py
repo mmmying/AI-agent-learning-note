@@ -35,6 +35,25 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     timeout: int = 30
 
+    # 上下文最大 token 预算
+    context_max_tokens: int = Field(default=16384, ge=4096)
+    # 预留输出预算
+    context_response_reserve: int = Field(default=4096, ge=256)
+    # 摘要预算
+    context_summary_max_tokens: int = Field(default=1024, ge=128)
+    context_recent_turns: int = Field(default=6, ge=0)
+
+    @model_validator(mode="after")
+    def _context_budget(self):
+        if self.context_summary_max_tokens > self.context_response_reserve:
+            raise ValueError(
+                "CONTEXT_SUMMARY_MAX_TOKENS 不能超过 CONTEXT_RESPONSE_RESERVE"
+            )
+        input_budget = self.context_max_tokens - self.context_response_reserve
+        if input_budget < 2 * self.context_summary_max_tokens + 2048:
+            raise ValueError("上下文输入预算需容纳摘要、摘要指令和最近消息")
+        return self
+
     # DeepSeek 思考模式开关与强度
     deepseek_thinking: Literal["enabled", "disabled"] = "disabled"
     deepseek_reasoning_effort: Literal["minimal", "low", "medium", "high"] = "high"

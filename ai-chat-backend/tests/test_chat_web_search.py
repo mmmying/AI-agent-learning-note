@@ -38,8 +38,8 @@ def test_stream_web_search_events_and_prompt(client, ai_client, web_search, data
         {"title": "FastAPI 教程", "url": "https://www.runoob.com/fastapi/", "snippet": "入门教程"},
     ]
     web_search.search.assert_called_once_with("FastAPI")
-    # 流式路径下 chat 只用于搜索词改写这一次调用
-    ai_client.chat.assert_called_once()
+    # 流式路径下 chat 用于改写 + 补搜审查两次；审查回显第一轮查询词被去重，不触发补搜
+    assert ai_client.chat.call_count == 2
 
     # 搜索结果与引用要求注入系统提示词，但发给模型的历史消息保持干净
     prompt = ai_client.chat_stream.call_args.kwargs["system_prompt"]
@@ -123,8 +123,8 @@ def test_stream_search_failure_degrades_to_normal(client, ai_client, web_search)
         "start", "search_start", "search_error", "delta", "delta", "done",
     ]
     assert events[2]["message"] == "联网搜索暂时不可用"
-    # 降级后仍正常回复，提示词不含搜索上下文
-    assert events[-1]["usage"]["total_tokens"] == 15
+    # 搜索失败不影响回复，已成功调用的搜索词改写仍计入用量。
+    assert events[-1]["usage"]["total_tokens"] == 30
     assert "联网搜索参考" not in ai_client.chat_stream.call_args.kwargs["system_prompt"]
 
 
@@ -138,8 +138,12 @@ def test_stream_search_empty_results_reports_error(client, web_search):
 
 
 def test_chat_non_stream_returns_sources(client, ai_client, web_search):
-    # 非流式下 chat 先用于改写、再用于回复，两次返回不同内容
-    ai_client.chat.side_effect = [("FastAPI", TokenUsage()), ("测试回复", TokenUsage())]
+    # 非流式下 chat 依次用于改写、补搜审查、回复，三次返回不同内容
+    ai_client.chat.side_effect = [
+        ("FastAPI", TokenUsage()),
+        ("ENOUGH", TokenUsage()),
+        ("测试回复", TokenUsage()),
+    ]
     response = client.post("/chat/chat", json={"message": "FastAPI 是什么", "web_search": True})
     assert response.status_code == 200
     body = response.json()
@@ -368,3 +372,112 @@ def test_stream_all_entities_noise_reports_error(client, ai_client, web_search):
 def test_results_mention_query(query, titles, expected):
     results = [SearchResult(title=t, url="https://x/", snippet="") for t in titles]
     assert results_mention_query(query, results) is expected
+
+
+def test_stream_refine_adds_second_round_and_merges(client, ai_client, web_search):
+    # 审查认为不足→补搜一轮：第二轮 search_start/search_result，来源合并去重落库
+    ai_client.chat.side_effect = [
+        ("隐状态", TokenUsage()),
+        ("隐状态 位置编码", TokenUsage()),
+    ]
+    round1 = [SearchResult(title="隐状态定义", url="https://a/", snippet="定义")]
+    round2 = [SearchResult(title="位置编码", url="https://b/", snippet="编码")]
+    web_search.search.side_effect = lambda q: {"隐状态": round1, "隐状态 位置编码": round2}[q]
+    response = client.post(
+        "/chat/stream", json={"message": "隐状态中的位置信息什么意思", "web_search": True}
+    )
+    events = _events(response)
+    assert [e["type"] for e in events] == [
+        "start", "search_start", "search_result", "search_start", "search_result",
+        "delta", "delta", "done",
+    ]
+    assert events[3]["query"] == "隐状态 位置编码"
+    assert events[4]["query"] == "隐状态 / 隐状态 位置编码"
+    assert [r["url"] for r in events[4]["results"]] == ["https://a/", "https://b/"]
+    assert web_search.search.call_args_list == [call("隐状态"), call("隐状态 位置编码")]
+    prompt = ai_client.chat_stream.call_args.kwargs["system_prompt"]
+    assert "https://a/" in prompt and "https://b/" in prompt
+    conversation_id = events[0]["conversation_id"]
+    assistant = client.get(f"/conversations/{conversation_id}/messages").json()[-1]
+    assert assistant["search_query"] == "隐状态 / 隐状态 位置编码"
+    assert len(assistant["sources"]) == 2
+
+
+def test_stream_refine_enough_skips_second_round(client, ai_client, web_search):
+    ai_client.chat.side_effect = [("FastAPI", TokenUsage()), ("ENOUGH", TokenUsage())]
+    response = client.post("/chat/stream", json={"message": "FastAPI 是什么", "web_search": True})
+    events = _events(response)
+    assert [e["type"] for e in events] == [
+        "start", "search_start", "search_result", "delta", "delta", "done",
+    ]
+    web_search.search.assert_called_once_with("FastAPI")
+
+
+def test_stream_refine_dedupes_first_round_queries(client, ai_client, web_search):
+    # 审查回显第一轮已有查询词→去重后无新查询，不补搜
+    ai_client.chat.side_effect = [("FastAPI", TokenUsage()), ("FastAPI", TokenUsage())]
+    response = client.post("/chat/stream", json={"message": "FastAPI 是什么", "web_search": True})
+    events = _events(response)
+    assert [e["type"] for e in events] == [
+        "start", "search_start", "search_result", "delta", "delta", "done",
+    ]
+    web_search.search.assert_called_once_with("FastAPI")
+
+
+def test_stream_refine_caps_queries(client, ai_client, web_search):
+    ai_client.chat.side_effect = [("主题", TokenUsage()), ("a|b|c", TokenUsage())]
+    web_search.search.side_effect = lambda q: [SearchResult(title=q, url=f"https://{q}/", snippet=q)]
+    response = client.post("/chat/stream", json={"message": "主题", "web_search": True})
+    events = _events(response)
+    # 只补前两条 a、b，c 被补搜上限截断
+    assert web_search.search.call_args_list == [call("主题"), call("a"), call("b")]
+    assert events[4]["query"] == "主题 / a / b"
+
+
+def test_stream_refine_noise_round2_keeps_round1(client, ai_client, web_search):
+    ai_client.chat.side_effect = [("隐状态", TokenUsage()), ("补充角度", TokenUsage())]
+    round1 = [SearchResult(title="隐状态定义", url="https://a/", snippet="定义")]
+    noise = [SearchResult(title="京东", url="https://jd/", snippet="购物")]
+    web_search.search.side_effect = lambda q: round1 if q == "隐状态" else noise
+    response = client.post("/chat/stream", json={"message": "隐状态", "web_search": True})
+    events = _events(response)
+    # 补搜轮全噪声被门控丢弃→保留第一轮来源，SSE 仍收尾不卡在 searching
+    assert events[4]["type"] == "search_result"
+    assert [r["url"] for r in events[4]["results"]] == ["https://a/"]
+    assert events[-1]["type"] == "done"
+
+
+def test_stream_refine_failure_skips(client, ai_client, web_search):
+    ai_client.chat.side_effect = [("FastAPI", TokenUsage()), RuntimeError("review down")]
+    response = client.post("/chat/stream", json={"message": "FastAPI 是什么", "web_search": True})
+    events = _events(response)
+    assert [e["type"] for e in events] == [
+        "start", "search_start", "search_result", "delta", "delta", "done",
+    ]
+    web_search.search.assert_called_once_with("FastAPI")
+
+
+def test_stream_refine_usage_counted(client, ai_client, web_search):
+    # 改写15 + 审查15 + 回复15 = 45（短会话无摘要用量）
+    usage = TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15)
+    ai_client.chat.side_effect = [("FastAPI", usage), ("ENOUGH", usage)]
+    response = client.post("/chat/stream", json={"message": "FastAPI 是什么", "web_search": True})
+    events = _events(response)
+    assert events[-1]["usage"]["total_tokens"] == 45
+
+
+def test_chat_non_stream_refine_merges(client, ai_client, web_search):
+    usage = TokenUsage(input_tokens=10, output_tokens=5, total_tokens=15)
+    ai_client.chat.side_effect = [
+        ("隐状态", usage),
+        ("隐状态 位置编码", usage),
+        ("测试回复", usage),
+    ]
+    round1 = [SearchResult(title="隐状态定义", url="https://a/", snippet="定义")]
+    round2 = [SearchResult(title="位置编码", url="https://b/", snippet="编码")]
+    web_search.search.side_effect = lambda q: {"隐状态": round1, "隐状态 位置编码": round2}[q]
+    response = client.post("/chat/chat", json={"message": "隐状态", "web_search": True})
+    body = response.json()
+    assert body["reply"] == "测试回复"
+    assert [s["url"] for s in body["sources"]] == ["https://a/", "https://b/"]
+    assert body["usage"]["total_tokens"] == 45

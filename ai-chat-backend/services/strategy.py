@@ -19,6 +19,8 @@ class AIProviderStrategy(ABC):
         self,
         system_prompt: str,
         messages: list[Message],
+        *,
+        max_output_tokens: int | None = None,
     ) -> tuple[str, TokenUsage]:
         pass
 
@@ -27,6 +29,8 @@ class AIProviderStrategy(ABC):
         self,
         system_prompt: str,
         messages: list[Message],
+        *,
+        max_output_tokens: int | None = None,
     ) -> Generator[str, None, TokenUsage]:
         pass
 
@@ -72,15 +76,18 @@ class OpenAICompatibleStrategy(AIProviderStrategy):
         self,
         system_prompt: str,
         messages: list[Message],
+        *,
+        max_output_tokens: int | None = None,
     ) -> tuple[str, TokenUsage]:
         input_messages = self._build_input_messages(
             system_prompt,
             messages,
         )
 
-        response = self.client.responses.create(
-            **self._build_request_kwargs(input_messages),
-        )
+        kwargs = self._build_request_kwargs(input_messages)
+        if max_output_tokens is not None:
+            kwargs["max_output_tokens"] = max_output_tokens
+        response = self.client.responses.create(**kwargs)
 
         return response.output_text, self._extract_usage(response.usage)
 
@@ -88,6 +95,8 @@ class OpenAICompatibleStrategy(AIProviderStrategy):
         self,
         system_prompt: str,
         messages: list[Message],
+        *,
+        max_output_tokens: int | None = None,
     ) -> Generator[str, None, TokenUsage]:
 
         input_messages = self._build_input_messages(
@@ -95,16 +104,16 @@ class OpenAICompatibleStrategy(AIProviderStrategy):
             messages,
         )
 
-        stream = self.client.responses.create(
-            **self._build_request_kwargs(input_messages),
-            stream=True,
-        )
+        kwargs = self._build_request_kwargs(input_messages)
+        if max_output_tokens is not None:
+            kwargs["max_output_tokens"] = max_output_tokens
+        stream = self.client.responses.create(**kwargs, stream=True)
 
         usage = TokenUsage()
         for event in stream:
             if event.type == "response.output_text.delta":
                 yield event.delta
-            elif event.type == "response.completed":
+            elif event.type in ("response.completed", "response.incomplete"):
                 usage = self._extract_usage(event.response.usage)
         return usage
 

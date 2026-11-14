@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -53,6 +53,14 @@ class Conversation(Base):
         Integer, nullable=False, default=0, server_default=text("0")
     )
     total_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    # 滚动摘要只影响模型上下文，完整消息历史仍保留。
+    context_summary: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    # 已经摘要到哪条消息
+    summary_through_id: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
     messages: Mapped[list["MessageRecord"]] = relationship(
